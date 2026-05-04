@@ -15,30 +15,11 @@ import { concludeStatus } from './shared.js';
 
 import { debounce } from '../shared/debounce.js';
 
-const CURRENT_SURFACE = document.body?.dataset.surface || 'popup';
-const IS_HOME_SURFACE = CURRENT_SURFACE === 'home';
-const HOME_DISABLED_SHORTCUT_IDS = new Set(['getMarkdown', 'emojiPicker']);
-
-/**
- * Determine whether a shortcut should be available for the current surface.
- * @param {string} shortcutId
- * @returns {boolean}
- */
-function isShortcutSupportedOnCurrentSurface(shortcutId) {
-  if (!IS_HOME_SURFACE) {
-    return true;
-  }
-  return !HOME_DISABLED_SHORTCUT_IDS.has(shortcutId);
-}
-
 /**
  * Close the current UI surface only when running as popup.
  * @returns {void}
  */
 function closeCurrentSurface() {
-  if (IS_HOME_SURFACE) {
-    return;
-  }
   window.close();
 }
 
@@ -94,8 +75,7 @@ function getPinnedShortcutActionFromEvent(event) {
 
   return (
     Object.entries(SHORTCUT_CONFIG).find(
-      ([shortcutId, config]) =>
-        isShortcutSupportedOnCurrentSurface(shortcutId) &&
+      ([, config]) =>
         config.key === key &&
         (config.shift ? event.shiftKey : !event.shiftKey),
     )?.[1] || null
@@ -411,12 +391,9 @@ async function loadAndRenderShortcuts() {
       ? pinnedIds
       : DEFAULT_PINNED_SHORTCUTS;
 
-    // Filter out unsupported shortcuts and openOptions (rendered separately).
+    // Filter out openOptions (rendered separately).
     const filteredShortcuts = shortcutsToRender.filter((id) => {
-      if (id === 'openOptions') {
-        return false;
-      }
-      return isShortcutSupportedOnCurrentSurface(id);
+      return id !== 'openOptions';
     });
 
     // Clear container
@@ -2251,10 +2228,6 @@ async function initializePopup() {
  * @returns {Promise<boolean>}
  */
 async function handleCommandNavigationFlags(flags) {
-  if (IS_HOME_SURFACE) {
-    return false;
-  }
-
   if (flags.openChatPage) {
     await chrome.storage.local.remove('openChatPage');
     if (!window.location.pathname.endsWith('chat.html')) {
@@ -2276,11 +2249,6 @@ async function handleCommandNavigationFlags(flags) {
 
 // Check if we should navigate to chat page or emoji page (triggered by keyboard shortcut)
 void (async () => {
-  if (IS_HOME_SURFACE) {
-    void initializePopup();
-    return;
-  }
-
   try {
     const result = await chrome.storage.local.get(['openChatPage', 'openEmojiPage']);
     const navigated = await handleCommandNavigationFlags({
@@ -2393,12 +2361,6 @@ window.addEventListener('unload', () => {
  * @returns {void}
  */
 function handleGetMarkdown() {
-  if (IS_HOME_SURFACE) {
-    if (statusMessage) {
-      concludeStatus('Chat with LLM is not available on home page.', 'info', 2500, statusMessage);
-    }
-    return;
-  }
   // Navigate to the chat page within the same popup window
   window.location.href = 'chat.html';
 }
@@ -2919,7 +2881,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     void initializePopup();
   }
 
-  if (namespace === 'local' && !IS_HOME_SURFACE) {
+  if (namespace === 'local') {
     const openChatPage = changes.openChatPage?.newValue === true;
     const openEmojiPage = changes.openEmojiPage?.newValue === true;
 

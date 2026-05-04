@@ -23,9 +23,6 @@
     "service_worker": "src/background/index.js",
     "type": "module"
   },
-  "chrome_url_overrides": {
-    "newtab": "src/home/index.html"
-  },
   "options_page": "src/options/index.html",
   "permissions": [
     "bookmarks",
