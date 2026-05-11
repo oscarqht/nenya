@@ -6,6 +6,10 @@
 
 Nenya is the ultimate browser extension for users who refuse to be tied down to a single browser. It provides a comprehensive suite of tools to manage your tabs, bookmarks, and settings, and makes it easy to take your data with you, no matter which browser you're using. With Nenya, you can integrate with Raindrop.io and enjoy a variety of content interaction features that enhance your browsing experience.
 
+## Privacy Policy
+
+Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.notion.site/Nenya-Privacy-Policy-2a37aa7407c1807e959cedfaa5d3a6bb)
+
 ## Features
 
 ### 🚀 Latest Updates (v1.46.0 - v1.49.0)
