@@ -9,6 +9,23 @@ import {
   useMemo,
 } from '../libs/tldraw/tldraw-vendor.mjs';
 
+const ANNOTATION_STYLE_PREFERENCES_KEY = 'editorAnnotationStylePreferences';
+const CLOSE_AFTER_ACTION_KEY = 'editorCloseAfterAction';
+const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'line', 'note', 'text']);
+
+/**
+ * @typedef {Object} AnnotationStylePreference
+ * @property {Record<string, string | number | boolean>} stylesForNextShape
+ * @property {number | undefined} opacityForNextShape
+ * @property {number} updatedAt
+ */
+
+/**
+ * @typedef {Object} AnnotationStylePreferences
+ * @property {number} version
+ * @property {Record<string, AnnotationStylePreference>} shapes
+ */
+
 /**
  * @typedef {Object} ScreenshotInfo
  * @property {string} dataUrl
@@ -17,13 +34,26 @@ import {
  * @property {string} mimeType
  */
 
-/** @type {{ editor: any, screenshotShapeId: string | null, bounds: any, closeAfterAction: boolean, actionFeedbackTimers: Record<string, number> }} */
+/**
+ * @typedef {Object} EditorState
+ * @property {any} editor
+ * @property {string | null} screenshotShapeId
+ * @property {any} bounds
+ * @property {boolean} closeAfterAction
+ * @property {Record<string, number>} actionFeedbackTimers
+ * @property {AnnotationStylePreferences} annotationStylePreferences
+ * @property {number | null} stylePreferencesSaveTimer
+ */
+
+/** @type {EditorState} */
 const editorState = {
   editor: null,
   screenshotShapeId: null,
   bounds: null,
   closeAfterAction: false,
   actionFeedbackTimers: {},
+  annotationStylePreferences: { version: 1, shapes: {} },
+  stylePreferencesSaveTimer: null,
 };
 
 const h = createElement;
@@ -125,6 +155,315 @@ async function loadStoredScreenshot() {
   }
 
   return loadScreenshotInfo(dataUrl);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is string | number | boolean}
+ */
+function isSerializableStyleValue(value) {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  );
+}
+
+/**
+ * @param {unknown} value
+ * @returns {AnnotationStylePreferences}
+ */
+function normalizeAnnotationStylePreferences(value) {
+  if (!value || typeof value !== 'object') {
+    return { version: 1, shapes: {} };
+  }
+
+  const source = /** @type {{ shapes?: unknown }} */ (value);
+  const shapes = source.shapes && typeof source.shapes === 'object' ? source.shapes : {};
+  /** @type {Record<string, AnnotationStylePreference>} */
+  const normalizedShapes = {};
+
+  for (const [key, preference] of Object.entries(shapes)) {
+    if (!preference || typeof preference !== 'object') continue;
+
+    const sourcePreference = /** @type {{ stylesForNextShape?: unknown, opacityForNextShape?: unknown, updatedAt?: unknown }} */ (
+      preference
+    );
+    const sourceStyles =
+      sourcePreference.stylesForNextShape && typeof sourcePreference.stylesForNextShape === 'object'
+        ? sourcePreference.stylesForNextShape
+        : {};
+    /** @type {Record<string, string | number | boolean>} */
+    const stylesForNextShape = {};
+
+    for (const [styleId, styleValue] of Object.entries(sourceStyles)) {
+      if (isSerializableStyleValue(styleValue)) {
+        stylesForNextShape[styleId] = styleValue;
+      }
+    }
+
+    const opacityForNextShape =
+      typeof sourcePreference.opacityForNextShape === 'number'
+        ? Math.max(0, Math.min(1, sourcePreference.opacityForNextShape))
+        : undefined;
+
+    if (Object.keys(stylesForNextShape).length > 0 || opacityForNextShape !== undefined) {
+      normalizedShapes[key] = {
+        stylesForNextShape,
+        opacityForNextShape,
+        updatedAt:
+          typeof sourcePreference.updatedAt === 'number'
+            ? sourcePreference.updatedAt
+            : Date.now(),
+      };
+    }
+  }
+
+  return { version: 1, shapes: normalizedShapes };
+}
+
+/**
+ * @returns {Promise<AnnotationStylePreferences>}
+ */
+async function loadAnnotationStylePreferences() {
+  const result = await chrome.storage.local.get(ANNOTATION_STYLE_PREFERENCES_KEY);
+  return normalizeAnnotationStylePreferences(result[ANNOTATION_STYLE_PREFERENCES_KEY]);
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+async function loadCloseAfterActionPreference() {
+  const result = await chrome.storage.local.get(CLOSE_AFTER_ACTION_KEY);
+  return result[CLOSE_AFTER_ACTION_KEY] === true;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+function saveCloseAfterActionPreference(value) {
+  void chrome.storage.local.set({
+    [CLOSE_AFTER_ACTION_KEY]: value,
+  });
+}
+
+/**
+ * @returns {void}
+ */
+function scheduleAnnotationStylePreferencesSave() {
+  if (editorState.stylePreferencesSaveTimer !== null) {
+    window.clearTimeout(editorState.stylePreferencesSaveTimer);
+  }
+
+  editorState.stylePreferencesSaveTimer = window.setTimeout(() => {
+    editorState.stylePreferencesSaveTimer = null;
+    void chrome.storage.local.set({
+      [ANNOTATION_STYLE_PREFERENCES_KEY]: editorState.annotationStylePreferences,
+    });
+  }, 250);
+}
+
+/**
+ * @param {any} shape
+ * @returns {boolean}
+ */
+function isAnnotationShape(shape) {
+  return Boolean(shape && ANNOTATION_SHAPE_TYPES.has(shape.type));
+}
+
+/**
+ * @param {any} shape
+ * @returns {string | null}
+ */
+function getAnnotationStylePreferenceKeyForShape(shape) {
+  if (!isAnnotationShape(shape)) return null;
+  if (shape.type === 'geo') {
+    return `geo:${typeof shape.props?.geo === 'string' ? shape.props.geo : 'rectangle'}`;
+  }
+
+  return shape.type;
+}
+
+/**
+ * @param {any} editor
+ * @param {string} shapeType
+ * @returns {Map<any, string> | null}
+ */
+function getShapeStyleProps(editor, shapeType) {
+  const styleProps = editor?.styleProps?.[shapeType];
+  return styleProps instanceof Map ? styleProps : null;
+}
+
+/**
+ * @param {any} editor
+ * @param {any} shape
+ * @returns {AnnotationStylePreference | null}
+ */
+function getAnnotationStylePreferenceForShape(editor, shape) {
+  const styleProps = getShapeStyleProps(editor, shape.type);
+  if (!styleProps) return null;
+
+  /** @type {Record<string, string | number | boolean>} */
+  const stylesForNextShape = {};
+
+  for (const [styleProp, propName] of styleProps) {
+    const value = shape.props?.[propName];
+    if (styleProp?.id && isSerializableStyleValue(value)) {
+      stylesForNextShape[styleProp.id] = value;
+    }
+  }
+
+  const opacityForNextShape =
+    typeof shape.opacity === 'number' ? Math.max(0, Math.min(1, shape.opacity)) : undefined;
+
+  if (Object.keys(stylesForNextShape).length === 0 && opacityForNextShape === undefined) {
+    return null;
+  }
+
+  return {
+    stylesForNextShape,
+    opacityForNextShape,
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * @param {any} editor
+ * @returns {{ key: string } | null}
+ */
+function getCurrentAnnotationStylePreferenceTarget(editor) {
+  const shapeType = editor?.getCurrentTool?.()?.shapeType;
+  if (!ANNOTATION_SHAPE_TYPES.has(shapeType)) return null;
+
+  if (shapeType === 'geo') {
+    const geo = editor.getInstanceState?.().stylesForNextShape?.['tldraw:geo'];
+    return { key: `geo:${typeof geo === 'string' ? geo : 'rectangle'}` };
+  }
+
+  return { key: shapeType };
+}
+
+/**
+ * @param {any} editor
+ * @param {string} key
+ * @returns {void}
+ */
+function applyAnnotationStylePreference(editor, key) {
+  const preference = editorState.annotationStylePreferences.shapes[key];
+  if (!preference) return;
+
+  const instanceState = editor.getInstanceState?.();
+  if (!instanceState) return;
+
+  /** @type {{ stylesForNextShape: Record<string, string | number | boolean>, opacityForNextShape?: number }} */
+  const nextState = {
+    stylesForNextShape: {
+      ...(instanceState.stylesForNextShape || {}),
+      ...preference.stylesForNextShape,
+    },
+  };
+
+  if (preference.opacityForNextShape !== undefined) {
+    nextState.opacityForNextShape = preference.opacityForNextShape;
+  }
+
+  editor.updateInstanceState(nextState);
+}
+
+/**
+ * @param {any} editor
+ * @returns {void}
+ */
+function applyCurrentAnnotationStylePreference(editor) {
+  const target = getCurrentAnnotationStylePreferenceTarget(editor);
+  if (!target) return;
+  applyAnnotationStylePreference(editor, target.key);
+}
+
+/**
+ * @param {string} key
+ * @param {AnnotationStylePreference | null} preference
+ * @returns {void}
+ */
+function rememberAnnotationStylePreference(key, preference) {
+  if (!preference) return;
+
+  editorState.annotationStylePreferences = {
+    version: 1,
+    shapes: {
+      ...editorState.annotationStylePreferences.shapes,
+      [key]: preference,
+    },
+  };
+  scheduleAnnotationStylePreferencesSave();
+}
+
+/**
+ * @param {any} editor
+ * @param {any} shape
+ * @returns {void}
+ */
+function rememberAnnotationShapeStyle(editor, shape) {
+  const key = getAnnotationStylePreferenceKeyForShape(shape);
+  if (!key) return;
+  rememberAnnotationStylePreference(key, getAnnotationStylePreferenceForShape(editor, shape));
+}
+
+/**
+ * @param {any} value
+ * @returns {any[]}
+ */
+function getChangeRecords(value) {
+  if (!value) return [];
+  if (value instanceof Map) return Array.from(value.values());
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'object') return Object.values(value);
+  return [];
+}
+
+/**
+ * @param {any} editor
+ * @returns {() => void}
+ */
+function bindAnnotationStylePreferences(editor) {
+  applyCurrentAnnotationStylePreference(editor);
+
+  const scheduleApplyCurrentPreference = () => {
+    window.requestAnimationFrame(() => applyCurrentAnnotationStylePreference(editor));
+  };
+  const applyBeforeCreatingShape = () => {
+    applyCurrentAnnotationStylePreference(editor);
+  };
+
+  document.addEventListener('pointerdown', applyBeforeCreatingShape, true);
+  document.addEventListener('pointerup', scheduleApplyCurrentPreference, true);
+  document.addEventListener('keydown', scheduleApplyCurrentPreference, true);
+
+  const disposeDocumentListener = editor.store.listen(
+    ({ changes }) => {
+      for (const record of getChangeRecords(changes?.added)) {
+        if (record?.typeName === 'shape') {
+          rememberAnnotationShapeStyle(editor, record);
+        }
+      }
+
+      for (const value of getChangeRecords(changes?.updated)) {
+        const record = Array.isArray(value) ? value[1] : value;
+        if (record?.typeName === 'shape') {
+          rememberAnnotationShapeStyle(editor, record);
+        }
+      }
+    },
+    { source: 'user', scope: 'document' }
+  );
+
+  return () => {
+    document.removeEventListener('pointerdown', applyBeforeCreatingShape, true);
+    document.removeEventListener('pointerup', scheduleApplyCurrentPreference, true);
+    document.removeEventListener('keydown', scheduleApplyCurrentPreference, true);
+    disposeDocumentListener?.();
+  };
 }
 
 /**
@@ -289,7 +628,9 @@ function ScreenshotEditorApp({ screenshot }) {
     (editor) => {
       editorState.editor = editor;
       insertScreenshot(editor, screenshot);
+      const disposeAnnotationStylePreferences = bindAnnotationStylePreferences(editor);
       hideStatus();
+      return disposeAnnotationStylePreferences;
     },
     [screenshot]
   );
@@ -308,8 +649,13 @@ function bindActions() {
   const closeAfter = /** @type {HTMLInputElement | null} */ (
     document.getElementById('prop-close-after')
   );
+  if (closeAfter) {
+    closeAfter.checked = editorState.closeAfterAction;
+  }
+
   closeAfter?.addEventListener('change', () => {
     editorState.closeAfterAction = Boolean(closeAfter.checked);
+    saveCloseAfterActionPreference(editorState.closeAfterAction);
   });
 
   document.getElementById('action-copy')?.addEventListener('click', () => {
@@ -327,7 +673,21 @@ async function init() {
   bindActions();
 
   try {
-    const screenshot = await loadStoredScreenshot();
+    const [screenshot, annotationStylePreferences, closeAfterAction] = await Promise.all([
+      loadStoredScreenshot(),
+      loadAnnotationStylePreferences(),
+      loadCloseAfterActionPreference(),
+    ]);
+    editorState.annotationStylePreferences = annotationStylePreferences;
+    editorState.closeAfterAction = closeAfterAction;
+
+    const closeAfter = /** @type {HTMLInputElement | null} */ (
+      document.getElementById('prop-close-after')
+    );
+    if (closeAfter) {
+      closeAfter.checked = closeAfterAction;
+    }
+
     const mountNode = document.getElementById('tldraw-editor');
     if (!mountNode) {
       throw new Error('Screenshot editor mount node is missing.');

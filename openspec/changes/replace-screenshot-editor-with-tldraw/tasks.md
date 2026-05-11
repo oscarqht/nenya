@@ -14,6 +14,8 @@
 - [x] 3.4 Wire Save to export the annotated tldraw content to a timestamped downloaded image.
 - [x] 3.5 Preserve close-after-action behavior.
 - [x] 3.6 Remove or isolate obsolete custom canvas editor code.
+- [x] 3.7 Persist and reuse tldraw annotation style options by annotation kind.
+- [x] 3.8 Persist and restore the close-after-action checkbox value.
 
 ## 4. Verification
 - [x] 4.1 Run `openspec validate replace-screenshot-editor-with-tldraw --strict`.

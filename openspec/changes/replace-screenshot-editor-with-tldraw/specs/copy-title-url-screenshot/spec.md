@@ -30,9 +30,24 @@ The extension MUST support capturing a screenshot of the current tab and opening
 - **AND** the exported image MUST be downloaded with a timestamped screenshot filename
 - **AND** the editor MUST show action feedback when saving succeeds
 
+#### Scenario: Preserve close-after-action preference
+
+- **GIVEN** the user changes the Close after copy or save checkbox in the screenshot editor
+- **WHEN** the screenshot editor is opened again later
+- **THEN** the checkbox MUST restore the user's last chosen value
+- **AND** Copy and Save MUST use the restored value when deciding whether to close the editor
+
 #### Scenario: Keep screenshot editor extension-local
 
 - **GIVEN** the screenshot editor is open
 - **WHEN** the editor loads tldraw and its required runtime assets
 - **THEN** all JavaScript, CSS, fonts, icons, translations, and other tldraw runtime assets MUST be loaded from extension-local files
 - **AND** the editor MUST NOT depend on remote scripts or remote assets at runtime
+
+#### Scenario: Reuse annotation options by kind
+
+- **GIVEN** the user creates or restyles a screenshot annotation in the editor
+- **WHEN** the user later chooses the same kind of annotation tool again
+- **THEN** the editor MUST apply the most recently chosen tldraw style options for that annotation kind before creating the next annotation
+- **AND** geo annotation styles MUST be remembered separately for each geo kind, such as rectangle and ellipse
+- **AND** the remembered options MUST persist across screenshot editor sessions
