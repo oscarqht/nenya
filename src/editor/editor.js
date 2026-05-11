@@ -1,2455 +1,346 @@
+import {
+  AssetRecordType,
+  Tldraw,
+  createElement,
+  createRoot,
+  createShapeId,
+  getAssetUrls,
+  useCallback,
+  useMemo,
+} from '../libs/tldraw/tldraw-vendor.mjs';
+
 /**
- * Screenshot Editor Logic
+ * @typedef {Object} ScreenshotInfo
+ * @property {string} dataUrl
+ * @property {number} width
+ * @property {number} height
+ * @property {string} mimeType
  */
-const chrome = /** @type {any} */ (window).chrome;
 
-class Shape {
-    /**
-     * @param {string} type
-     * @param {string} color
-     * @param {number} opacity
-     * @param {number} lineWidth
-     */
-    constructor(type, color, opacity, lineWidth = 4) {
-        this.type = type;
-        this.color = color;
-        this.opacity = 1;
-        this.lineWidth = lineWidth;
-        this.selected = false;
-        this.id = Date.now() + Math.random();
-    }
+/** @type {{ editor: any, screenshotShapeId: string | null, bounds: any, closeAfterAction: boolean, actionFeedbackTimers: Record<string, number> }} */
+const editorState = {
+  editor: null,
+  screenshotShapeId: null,
+  bounds: null,
+  closeAfterAction: false,
+  actionFeedbackTimers: {},
+};
 
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {HTMLImageElement} [backgroundImage]
-     */
-    draw(ctx, backgroundImage) {
-        ctx.globalAlpha = this.opacity;
-        ctx.strokeStyle = this.color;
-        ctx.fillStyle = this.color;
-        ctx.lineWidth = this.lineWidth;
-        ctx.lineJoin = 'round';
-        ctx.lineCap = 'round';
-    }
+const h = createElement;
 
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {CanvasRenderingContext2D} ctx
-     * @returns {boolean}
-     */
-    contains(x, y, ctx) { return false; }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {}
-
-    /**
-     * @returns {Array<{x: number, y: number, type: string, cursor: string}>}
-     */
-    getHandles() { return []; }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {}
-
-    /**
-     * @returns {Shape}
-     */
-    clone() {
-        const copy = new Shape(this.type, this.color, this.opacity, this.lineWidth);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        return copy;
-    }
-}
-
-class RectShape extends Shape {
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} w
-     * @param {number} h
-     * @param {string} color
-     * @param {number} opacity
-     * @param {number} lineWidth
-     */
-    constructor(x, y, w, h, color, opacity, lineWidth) {
-        super('rect', color, opacity, lineWidth);
-        this.x = x;
-        this.y = y;
-        this.w = w;
-        this.h = h;
-    }
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     */
-    draw(ctx) {
-        super.draw(ctx);
-        ctx.beginPath();
-        ctx.rect(this.x, this.y, this.w, this.h);
-        ctx.stroke();
-
-        if (this.selected) {
-            drawSelectionBox(ctx, this.x, this.y, this.w, this.h);
-        }
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @returns {boolean}
-     */
-    contains(x, y) {
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        const t = Math.max(5, this.lineWidth / 2);
-        const outer = (x >= nx - t && x <= nx + nw + t && y >= ny - t && y <= ny + nh + t);
-        const inner = (x >= nx + t && x <= nx + nw - t && y >= ny + t && y <= ny + nh - t);
-        return outer && !inner;
-    }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {
-        this.x += dx;
-        this.y += dy;
-    }
-
-    getHandles() {
-        if (!this.selected) return [];
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        return [
-            { x: nx, y: ny, type: 'nw', cursor: 'nwse-resize' },
-            { x: nx + nw, y: ny, type: 'ne', cursor: 'nesw-resize' },
-            { x: nx + nw, y: ny + nh, type: 'se', cursor: 'nwse-resize' },
-            { x: nx, y: ny + nh, type: 'sw', cursor: 'nesw-resize' }
-        ];
-    }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        switch(handleType) {
-            case 'nw': nx = x; ny = y; nw -= dx; nh -= dy; break;
-            case 'ne': ny = y; nw = x - nx; nh -= dy; break;
-            case 'se': nw = x - nx; nh = y - ny; break;
-            case 'sw': nx = x; nw -= dx; nh = y - ny; break;
-        }
-
-        this.x = nx;
-        this.y = ny;
-        this.w = nw;
-        this.h = nh;
-    }
-
-    /**
-     * @returns {RectShape}
-     */
-    clone() {
-        const copy = new RectShape(this.x, this.y, this.w, this.h, this.color, this.opacity, this.lineWidth);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        return copy;
-    }
-}
-
-class HighlightShape extends Shape {
-    /**
-     * @param {number} x1
-     * @param {number} y1
-     * @param {number} x2
-     * @param {number} y2
-     * @param {string} color
-     * @param {number} opacity
-     * @param {number} lineWidth
-     */
-    constructor(x1, y1, x2, y2, color, opacity, lineWidth) {
-        super('highlight', color, opacity, lineWidth);
-        this.x1 = x1;
-        this.y1 = y1;
-        this.x2 = x2;
-        this.y2 = y2;
-    }
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     */
-    draw(ctx) {
-        ctx.save();
-        ctx.globalAlpha = this.opacity;
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = this.lineWidth;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        ctx.moveTo(this.x1, this.y1);
-        ctx.lineTo(this.x2, this.y2);
-        ctx.stroke();
-
-        if (this.selected) {
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = '#00a1ff';
-            ctx.lineWidth = 1;
-            ctx.fillRect(this.x1 - 4, this.y1 - 4, 8, 8);
-            ctx.strokeRect(this.x1 - 4, this.y1 - 4, 8, 8);
-            ctx.fillRect(this.x2 - 4, this.y2 - 4, 8, 8);
-            ctx.strokeRect(this.x2 - 4, this.y2 - 4, 8, 8);
-        }
-        ctx.restore();
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @returns {boolean}
-     */
-    contains(x, y) {
-        const A = x - this.x1;
-        const B = y - this.y1;
-        const C = this.x2 - this.x1;
-        const D = this.y2 - this.y1;
-
-        const dot = A * C + B * D;
-        const len_sq = C * C + D * D;
-        let param = -1;
-        if (len_sq !== 0) param = dot / len_sq;
-
-        let xx, yy;
-
-        if (param < 0) { xx = this.x1; yy = this.y1; }
-        else if (param > 1) { xx = this.x2; yy = this.y2; }
-        else { xx = this.x1 + param * C; yy = this.y1 + param * D; }
-
-        const dx = x - xx;
-        const dy = y - yy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        return dist < Math.max(6, this.lineWidth / 2);
-    }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {
-        this.x1 += dx;
-        this.y1 += dy;
-        this.x2 += dx;
-        this.y2 += dy;
-    }
-
-    /**
-     * @returns {Array<{x: number, y: number, type: string, cursor: string}>}
-     */
-    getHandles() {
-        if (!this.selected) return [];
-        return [
-            { x: this.x1, y: this.y1, type: 'start', cursor: 'move' },
-            { x: this.x2, y: this.y2, type: 'end', cursor: 'move' }
-        ];
-    }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {
-        if (handleType === 'start') {
-            this.x1 = x;
-            this.y1 = y;
-        } else if (handleType === 'end') {
-            this.x2 = x;
-            this.y2 = y;
-        }
-    }
-
-    /**
-     * @returns {HighlightShape}
-     */
-    clone() {
-        const copy = new HighlightShape(this.x1, this.y1, this.x2, this.y2, this.color, this.opacity, this.lineWidth);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        return copy;
-    }
-}
-
-class ArrowShape extends Shape {
-    /**
-     * @param {number} x1
-     * @param {number} y1
-     * @param {number} x2
-     * @param {number} y2
-     * @param {string} color
-     * @param {number} opacity
-     * @param {number} lineWidth
-     * @param {boolean} [hasBorder]
-     */
-    constructor(x1, y1, x2, y2, color, opacity, lineWidth, hasBorder = false) {
-        super('arrow', color, opacity, lineWidth);
-        this.x1 = x1;
-        this.y1 = y1;
-        this.x2 = x2;
-        this.y2 = y2;
-        this.hasBorder = hasBorder;
-    }
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     */
-    draw(ctx) {
-        ctx.globalAlpha = this.opacity;
-        
-        const headlen = 15 + this.lineWidth * 2;
-        const angle = Math.atan2(this.y2 - this.y1, this.x2 - this.x1);
-        const perpAngle = angle + Math.PI / 2;
-        const halfWidth = this.lineWidth / 2;
-
-        // Calculate shaft corners (perpendicular to direction)
-        const startLeftX = this.x1 + halfWidth * Math.cos(perpAngle);
-        const startLeftY = this.y1 + halfWidth * Math.sin(perpAngle);
-        const startRightX = this.x1 - halfWidth * Math.cos(perpAngle);
-        const startRightY = this.y1 - halfWidth * Math.sin(perpAngle);
-
-        // Where shaft meets arrowhead base
-        const shaftShorten = headlen * Math.cos(Math.PI / 6);
-        const baseX = this.x2 - shaftShorten * Math.cos(angle);
-        const baseY = this.y2 - shaftShorten * Math.sin(angle);
-
-        const baseLeftX = baseX + halfWidth * Math.cos(perpAngle);
-        const baseLeftY = baseY + halfWidth * Math.sin(perpAngle);
-        const baseRightX = baseX - halfWidth * Math.cos(perpAngle);
-        const baseRightY = baseY - halfWidth * Math.sin(perpAngle);
-
-        // Arrowhead wing points
-        const wingLeftX = this.x2 - headlen * Math.cos(angle - Math.PI / 6);
-        const wingLeftY = this.y2 - headlen * Math.sin(angle - Math.PI / 6);
-        const wingRightX = this.x2 - headlen * Math.cos(angle + Math.PI / 6);
-        const wingRightY = this.y2 - headlen * Math.sin(angle + Math.PI / 6);
-
-        // Build arrow as a single polygon path
-        ctx.beginPath();
-        ctx.moveTo(startLeftX, startLeftY);
-        ctx.lineTo(baseLeftX, baseLeftY);
-        ctx.lineTo(wingLeftX, wingLeftY);
-        ctx.lineTo(this.x2, this.y2); // tip
-        ctx.lineTo(wingRightX, wingRightY);
-        ctx.lineTo(baseRightX, baseRightY);
-        ctx.lineTo(startRightX, startRightY);
-        ctx.closePath();
-
-        // Draw border first (stroke), then fill on top
-        if (this.hasBorder) {
-            const brightness = getBrightness(this.color);
-            const borderColor = brightness < 128 ? '#ffffff' : '#000000';
-            const borderWidth = Math.max(2, this.lineWidth / 3);
-
-            ctx.strokeStyle = borderColor;
-            ctx.lineWidth = borderWidth;
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round';
-            ctx.stroke();
-        }
-
-        // Fill the arrow shape
-        ctx.fillStyle = this.color;
-        ctx.fill();
-
-        if (this.selected) {
-             ctx.globalAlpha = 1;
-             ctx.fillStyle = 'white';
-             ctx.strokeStyle = '#00a1ff';
-             ctx.lineWidth = 1;
-             ctx.fillRect(this.x1 - 4, this.y1 - 4, 8, 8);
-             ctx.strokeRect(this.x1 - 4, this.y1 - 4, 8, 8);
-             ctx.fillRect(this.x2 - 4, this.y2 - 4, 8, 8);
-             ctx.strokeRect(this.x2 - 4, this.y2 - 4, 8, 8);
-        }
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @returns {boolean}
-     */
-    contains(x, y) {
-        const A = x - this.x1;
-        const B = y - this.y1;
-        const C = this.x2 - this.x1;
-        const D = this.y2 - this.y1;
-
-        const dot = A * C + B * D;
-        const len_sq = C * C + D * D;
-        let param = -1;
-        if (len_sq !== 0) param = dot / len_sq;
-
-        let xx, yy;
-
-        if (param < 0) { xx = this.x1; yy = this.y1; }
-        else if (param > 1) { xx = this.x2; yy = this.y2; }
-        else { xx = this.x1 + param * C; yy = this.y1 + param * D; }
-
-        const dx = x - xx;
-        const dy = y - yy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        return dist < Math.max(6, this.lineWidth);
-    }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {
-        this.x1 += dx;
-        this.y1 += dy;
-        this.x2 += dx;
-        this.y2 += dy;
-    }
-
-    /**
-     * @returns {Array<{x: number, y: number, type: string, cursor: string}>}
-     */
-    getHandles() {
-        if (!this.selected) return [];
-        return [
-            { x: this.x1, y: this.y1, type: 'start', cursor: 'move' },
-            { x: this.x2, y: this.y2, type: 'end', cursor: 'move' }
-        ];
-    }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {
-        if (handleType === 'start') {
-            this.x1 = x;
-            this.y1 = y;
-        } else if (handleType === 'end') {
-            this.x2 = x;
-            this.y2 = y;
-        }
-    }
-
-    /**
-     * @returns {ArrowShape}
-     */
-    clone() {
-        const copy = new ArrowShape(this.x1, this.y1, this.x2, this.y2, this.color, this.opacity, this.lineWidth, this.hasBorder);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        return copy;
-    }
+/**
+ * @param {string} message
+ * @returns {void}
+ */
+function setStatus(message) {
+  const status = document.getElementById('editor-status');
+  if (!status) return;
+  status.textContent = message;
+  status.classList.remove('hidden');
 }
 
 /**
- * @param {string} color
- * @returns {number}
+ * @returns {void}
  */
-function getBrightness(color) {
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    return (r * 299 + g * 587 + b * 114) / 1000;
-}
-
-class TextShape extends Shape {
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {string} text
-     * @param {string} color
-     * @param {number} opacity
-     * @param {string} fontFamily
-     * @param {number} fontSize
-     * @param {boolean} [isBold]
-     * @param {boolean} [isItalic]
-     * @param {boolean} [isUnderline]
-     * @param {boolean} [hasBorder]
-     */
-    constructor(x, y, text, color, opacity, fontFamily, fontSize, isBold = false, isItalic = false, isUnderline = false, hasBorder = false) {
-        super('text', color, opacity);
-        this.x = x;
-        this.y = y;
-        this.text = text;
-        this.fontFamily = fontFamily;
-        this.fontSize = fontSize;
-        this.isBold = isBold;
-        this.isItalic = isItalic;
-        this.isUnderline = isUnderline;
-        this.hasBorder = hasBorder;
-        this.lineHeight = 1.2; // Line height multiplier
-    }
-
-    /**
-     * Get lines of text split by newlines
-     * @returns {string[]}
-     */
-    getLines() {
-        return this.text.split('\n');
-    }
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     */
-    draw(ctx) {
-        ctx.save();
-        ctx.globalAlpha = this.opacity;
-        ctx.fillStyle = this.color;
-
-        const style = this.isItalic ? 'italic ' : '';
-        const weight = this.isBold ? 'bold ' : '';
-        ctx.font = `${style}${weight}${this.fontSize}px "${this.fontFamily}"`;
-        ctx.textBaseline = 'top';
-
-        const lines = this.getLines();
-        const lineHeightPx = this.fontSize * this.lineHeight;
-        
-        // Calculate max width for selection box
-        let maxWidth = 0;
-        for (const line of lines) {
-            const lineWidth = ctx.measureText(line).width;
-            if (lineWidth > maxWidth) maxWidth = lineWidth;
-        }
-        this.lastWidth = maxWidth;
-        this.lastHeight = lines.length * lineHeightPx;
-
-        // Draw each line
-        for (let i = 0; i < lines.length; i++) {
-            const lineY = this.y + i * lineHeightPx;
-            const lineText = lines[i];
-
-            if (this.hasBorder) {
-                const brightness = getBrightness(this.color);
-                ctx.strokeStyle = brightness < 128 ? '#ffffff' : '#000000';
-                ctx.lineWidth = Math.max(2, this.fontSize / 10);
-                ctx.lineJoin = 'round';
-                ctx.miterLimit = 2;
-                ctx.strokeText(lineText, this.x, lineY);
-            }
-
-            ctx.fillText(lineText, this.x, lineY);
-
-            if (this.isUnderline) {
-                const lineWidth = ctx.measureText(lineText).width;
-                ctx.beginPath();
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = Math.max(1, this.fontSize / 15);
-                ctx.moveTo(this.x, lineY + this.fontSize * 0.9);
-                ctx.lineTo(this.x + lineWidth, lineY + this.fontSize * 0.9);
-                ctx.stroke();
-            }
-        }
-
-        if (this.selected) {
-            drawSelectionBox(ctx, this.x, this.y, this.lastWidth, this.lastHeight);
-        }
-        ctx.restore();
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {CanvasRenderingContext2D} ctx
-     * @returns {boolean}
-     */
-    contains(x, y, ctx) {
-        const style = this.isItalic ? 'italic ' : '';
-        const weight = this.isBold ? 'bold ' : '';
-        ctx.font = `${style}${weight}${this.fontSize}px "${this.fontFamily}"`;
-        
-        const lines = this.getLines();
-        const lineHeightPx = this.fontSize * this.lineHeight;
-        
-        // Calculate max width
-        let maxWidth = 0;
-        for (const line of lines) {
-            const lineWidth = ctx.measureText(line).width;
-            if (lineWidth > maxWidth) maxWidth = lineWidth;
-        }
-        this.lastWidth = maxWidth;
-        this.lastHeight = lines.length * lineHeightPx;
-        
-        return (x >= this.x && x <= this.x + this.lastWidth && y >= this.y && y <= this.y + this.lastHeight);
-    }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {
-        this.x += dx;
-        this.y += dy;
-    }
-
-    /**
-     * @returns {Array<{x: number, y: number, type: string, cursor: string}>}
-     */
-    getHandles() {
-        if (!this.selected) return [];
-        const width = this.lastWidth || 0;
-        const height = this.lastHeight || this.fontSize;
-
-        return [
-            { x: this.x, y: this.y, type: 'nw', cursor: 'nwse-resize' },
-            { x: this.x + width, y: this.y, type: 'ne', cursor: 'nesw-resize' },
-            { x: this.x + width, y: this.y + height, type: 'se', cursor: 'nwse-resize' },
-            { x: this.x, y: this.y + height, type: 'sw', cursor: 'nesw-resize' }
-        ];
-    }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {
-        const oldFontSize = this.fontSize;
-        const oldWidth = this.lastWidth || 0;
-        const oldHeight = this.lastHeight || this.fontSize;
-        const lines = this.getLines();
-        let newFontSize = oldFontSize;
-
-        // Calculate based on height change, accounting for number of lines
-        switch (handleType) {
-            case 'se':
-            case 'sw':
-                newFontSize = (y - this.y) / (lines.length * this.lineHeight);
-                break;
-            case 'ne':
-            case 'nw':
-                newFontSize = ((this.y + oldHeight) - y) / (lines.length * this.lineHeight);
-                break;
-        }
-
-        this.fontSize = Math.max(8, Math.min(1000, newFontSize));
-        const scale = this.fontSize / oldFontSize;
-        const newWidth = oldWidth * scale;
-        const newHeight = oldHeight * scale;
-
-        // Adjust position based on anchor
-        if (handleType === 'nw' || handleType === 'sw') {
-            this.x = (this.x + oldWidth) - newWidth;
-        }
-        if (handleType === 'nw' || handleType === 'ne') {
-            this.y = (this.y + oldHeight) - newHeight;
-        }
-        
-        this.lastWidth = newWidth;
-        this.lastHeight = newHeight;
-    }
-
-    /**
-     * @returns {TextShape}
-     */
-    clone() {
-        const copy = new TextShape(this.x, this.y, this.text, this.color, this.opacity, this.fontFamily, this.fontSize, this.isBold, this.isItalic, this.isUnderline, this.hasBorder);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        copy.lineHeight = this.lineHeight;
-        return copy;
-    }
-}
-
-class BlurShape extends Shape {
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} w
-     * @param {number} h
-     * @param {number} opacity
-     */
-    constructor(x, y, w, h, opacity) {
-        super('blur', '#000', opacity, 0);
-        this.x = x;
-        this.y = y;
-        this.w = w;
-        this.h = h;
-    }
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {HTMLImageElement} [backgroundImage]
-     */
-    draw(ctx, backgroundImage) {
-        if (!backgroundImage) return;
-
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        if (nw === 0 || nh === 0) return;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(nx, ny, nw, nh);
-        ctx.clip();
-
-        // Apply blur - scale with opacity
-        const blurAmount = 15 * (this.opacity || 1);
-        ctx.filter = `blur(${blurAmount}px)`;
-        ctx.drawImage(backgroundImage, 0, 0);
-        ctx.restore();
-
-        if (this.selected) {
-            drawSelectionBox(ctx, nx, ny, nw, nh);
-        }
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @returns {boolean}
-     */
-    contains(x, y) {
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-        return (x >= nx && x <= nx + nw && y >= ny && y <= ny + nh);
-    }
-
-    /**
-     * @param {number} dx
-     * @param {number} dy
-     */
-    move(dx, dy) {
-        this.x += dx;
-        this.y += dy;
-    }
-
-    /**
-     * @returns {Array<{x: number, y: number, type: string, cursor: string}>}
-     */
-    getHandles() {
-        if (!this.selected) return [];
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        return [
-            { x: nx, y: ny, type: 'nw', cursor: 'nwse-resize' },
-            { x: nx + nw, y: ny, type: 'ne', cursor: 'nesw-resize' },
-            { x: nx + nw, y: ny + nh, type: 'se', cursor: 'nwse-resize' },
-            { x: nx, y: ny + nh, type: 'sw', cursor: 'nesw-resize' }
-        ];
-    }
-
-    /**
-     * @param {string} handleType
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateHandle(handleType, x, y, dx, dy) {
-        let nx = this.w < 0 ? this.x + this.w : this.x;
-        let ny = this.h < 0 ? this.y + this.h : this.y;
-        let nw = Math.abs(this.w);
-        let nh = Math.abs(this.h);
-
-        switch(handleType) {
-            case 'nw': nx = x; ny = y; nw -= dx; nh -= dy; break;
-            case 'ne': ny = y; nw = x - nx; nh -= dy; break;
-            case 'se': nw = x - nx; nh = y - ny; break;
-            case 'sw': nx = x; nw -= dx; nh = y - ny; break;
-        }
-
-        this.x = nx;
-        this.y = ny;
-        this.w = nw;
-        this.h = nh;
-    }
-
-    /**
-     * @returns {BlurShape}
-     */
-    clone() {
-        const copy = new BlurShape(this.x, this.y, this.w, this.h, this.opacity);
-        copy.selected = this.selected;
-        copy.id = this.id;
-        return copy;
-    }
+function hideStatus() {
+  const status = document.getElementById('editor-status');
+  if (!status) return;
+  status.classList.add('hidden');
 }
 
 /**
- * @param {CanvasRenderingContext2D} ctx
- * @param {number} x
- * @param {number} y
- * @param {number} w
- * @param {number} h
+ * @returns {string}
  */
-function drawSelectionBox(ctx, x, y, w, h) {
-    ctx.save();
-    ctx.strokeStyle = '#00a1ff';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 2]);
+function getSuccessIconSvg() {
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+}
 
-    let nx = x, ny = y, nw = w, nh = h;
-    if (w < 0) { nx = x + w; nw = -w; }
-    if (h < 0) { ny = y + h; nh = -h; }
+/**
+ * @param {string} buttonId
+ * @returns {void}
+ */
+function showActionSuccessIcon(buttonId) {
+  const button = /** @type {HTMLButtonElement | null} */ (document.getElementById(buttonId));
+  if (!button) return;
 
-    ctx.strokeRect(nx - 2, ny - 2, nw + 4, nh + 4);
+  if (!button.dataset.originalIconHtml) {
+    button.dataset.originalIconHtml = button.innerHTML;
+  }
 
-    // Handles
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = '#00a1ff';
-    ctx.setLineDash([]);
-    const handles = [
-        [nx - 4, ny - 4], [nx + nw - 4, ny - 4],
-        [nx + nw - 4, ny + nh - 4], [nx - 4, ny + nh - 4]
-    ];
-    handles.forEach(([hx, hy]) => {
-        ctx.fillRect(hx, hy, 8, 8);
-        ctx.strokeRect(hx, hy, 8, 8);
+  const existingTimer = editorState.actionFeedbackTimers[buttonId];
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  button.innerHTML = getSuccessIconSvg();
+  editorState.actionFeedbackTimers[buttonId] = window.setTimeout(() => {
+    if (button.dataset.originalIconHtml) {
+      button.innerHTML = button.dataset.originalIconHtml;
+    }
+    delete editorState.actionFeedbackTimers[buttonId];
+  }, 2000);
+}
+
+/**
+ * @param {HTMLButtonElement | null} button
+ * @param {boolean} busy
+ * @returns {void}
+ */
+function setButtonBusy(button, busy) {
+  if (!button) return;
+  button.disabled = busy;
+  button.classList.toggle('loading', busy);
+}
+
+/**
+ * @param {string} dataUrl
+ * @returns {Promise<ScreenshotInfo>}
+ */
+function loadScreenshotInfo(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const mimeType = /^data:([^;,]+)/.exec(dataUrl)?.[1] || 'image/png';
+      resolve({
+        dataUrl,
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height,
+        mimeType,
+      });
+    };
+    image.onerror = () => reject(new Error('Failed to load screenshot image'));
+    image.src = dataUrl;
+  });
+}
+
+/**
+ * @returns {Promise<ScreenshotInfo>}
+ */
+async function loadStoredScreenshot() {
+  const result = await chrome.storage.local.get('editorScreenshot');
+  const dataUrl = typeof result.editorScreenshot === 'string' ? result.editorScreenshot : '';
+
+  if (!dataUrl) {
+    throw new Error('No screenshot found. Take a screenshot again.');
+  }
+
+  return loadScreenshotInfo(dataUrl);
+}
+
+/**
+ * @param {any} editor
+ * @param {ScreenshotInfo} screenshot
+ * @returns {void}
+ */
+function insertScreenshot(editor, screenshot) {
+  const assetId = AssetRecordType.createId();
+  const shapeId = createShapeId('screenshot-background');
+
+  editor.run(
+    () => {
+      editor.createAssets([
+        {
+          id: assetId,
+          typeName: 'asset',
+          type: 'image',
+          props: {
+            name: 'screenshot.png',
+            src: screenshot.dataUrl,
+            w: screenshot.width,
+            h: screenshot.height,
+            mimeType: screenshot.mimeType,
+            isAnimated: false,
+          },
+          meta: {},
+        },
+      ]);
+
+      editor.createShape({
+        id: shapeId,
+        type: 'image',
+        x: 0,
+        y: 0,
+        isLocked: true,
+        props: {
+          assetId,
+          w: screenshot.width,
+          h: screenshot.height,
+          altText: 'Captured screenshot',
+        },
+      });
+
+      editor.selectNone();
+    },
+    { history: 'ignore', ignoreShapeLock: true }
+  );
+
+  editorState.screenshotShapeId = shapeId;
+  editorState.bounds =
+    editor.getShapePageBounds(shapeId) || {
+      x: 0,
+      y: 0,
+      w: screenshot.width,
+      h: screenshot.height,
+    };
+
+  editor.zoomToBounds(editorState.bounds, { immediate: true, inset: 64 });
+}
+
+/**
+ * @param {'png' | 'jpeg'} format
+ * @returns {Promise<Blob>}
+ */
+async function exportAnnotatedScreenshot(format) {
+  const { editor, bounds } = editorState;
+  if (!editor || !bounds) {
+    throw new Error('Screenshot editor is not ready yet.');
+  }
+
+  editor.selectNone();
+  const shapeIds = Array.from(editor.getCurrentPageShapeIds());
+  const result = await editor.toImage(shapeIds, {
+    format,
+    bounds,
+    background: true,
+    padding: 0,
+    pixelRatio: Math.max(1, Math.min(2, window.devicePixelRatio || 1)),
+  });
+
+  if (!result || !result.blob) {
+    throw new Error('Failed to export annotated screenshot.');
+  }
+
+  return result.blob;
+}
+
+/**
+ * @returns {string}
+ */
+function createScreenshotFilename() {
+  return `screenshot-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function copyToClipboard() {
+  const button = /** @type {HTMLButtonElement | null} */ (document.getElementById('action-copy'));
+  try {
+    setButtonBusy(button, true);
+    const blob = await exportAnnotatedScreenshot('png');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    showActionSuccessIcon('action-copy');
+
+    if (editorState.closeAfterAction) {
+      window.setTimeout(() => window.close(), 500);
+    }
+  } catch (error) {
+    console.error('[editor] Failed to copy annotated screenshot:', error);
+    alert(error instanceof Error ? error.message : 'Failed to copy to clipboard.');
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+/**
+ * @returns {Promise<void>}
+ */
+async function saveImage() {
+  const button = /** @type {HTMLButtonElement | null} */ (document.getElementById('action-save'));
+  let objectUrl = '';
+  try {
+    setButtonBusy(button, true);
+    const blob = await exportAnnotatedScreenshot('png');
+    objectUrl = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.download = createScreenshotFilename();
+    link.href = objectUrl;
+    link.click();
+
+    showActionSuccessIcon('action-save');
+
+    if (editorState.closeAfterAction) {
+      window.setTimeout(() => window.close(), 500);
+    }
+  } catch (error) {
+    console.error('[editor] Failed to save annotated screenshot:', error);
+    alert(error instanceof Error ? error.message : 'Failed to save screenshot.');
+  } finally {
+    if (objectUrl) {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+    setButtonBusy(button, false);
+  }
+}
+
+/**
+ * @param {{ screenshot: ScreenshotInfo }} props
+ * @returns {any}
+ */
+function ScreenshotEditorApp({ screenshot }) {
+  const assetUrls = useMemo(() => {
+    return getAssetUrls({
+      baseUrl: chrome.runtime.getURL('src/libs/tldraw/assets'),
     });
-    ctx.restore();
+  }, []);
+
+  const handleMount = useCallback(
+    (editor) => {
+      editorState.editor = editor;
+      insertScreenshot(editor, screenshot);
+      hideStatus();
+    },
+    [screenshot]
+  );
+
+  return h(Tldraw, {
+    assetUrls,
+    autoFocus: true,
+    onMount: handleMount,
+  });
 }
 
-class Editor {
-    /**
-     * @param {string} canvasId
-     * @param {string} containerId
-     */
-    constructor(canvasId, containerId) {
-        this.canvas = /** @type {HTMLCanvasElement} */ (document.getElementById(canvasId));
-        this.container = /** @type {HTMLElement} */ (document.getElementById(containerId));
-        this.ctx = /** @type {CanvasRenderingContext2D} */ (this.canvas.getContext('2d'));
+/**
+ * @returns {void}
+ */
+function bindActions() {
+  const closeAfter = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('prop-close-after')
+  );
+  closeAfter?.addEventListener('change', () => {
+    editorState.closeAfterAction = Boolean(closeAfter.checked);
+  });
 
-        /** @type {Shape[]} */
-        this.shapes = [];
-        /** @type {HTMLImageElement | null} */
-        this.backgroundImage = null;
-        this.tool = 'select';
-        /** @type {Shape | null} */
-        this.currentShape = null;
-        this.isDragging = false;
-        this.dragStart = { x: 0, y: 0 };
-        this.lastPos = { x: 0, y: 0 };
-        /** @type {{shape: Shape, type: string} | null} */
-        this.draggingHandle = null;
+  document.getElementById('action-copy')?.addEventListener('click', () => {
+    void copyToClipboard();
+  });
+  document.getElementById('action-save')?.addEventListener('click', () => {
+    void saveImage();
+  });
+}
 
-        /** @type {{x: number, y: number, w: number, h: number} | null} */
-        this.cropRect = null;
-        this.isCropping = false;
-        /** @type {string | null} */
-        this.cropHandle = null;
+/**
+ * @returns {Promise<void>}
+ */
+async function init() {
+  bindActions();
 
-        // Properties
-        this.color = '#ff0000';
-        this.opacity = 1.0;
-        this.lineWidth = 4;
-        this.rectLineWidth = 4;
-        this.arrowLineWidth = 4;
-        this.highlightLineWidth = 20;
-        this.fontFamily = 'Arial';
-        this.fontSize = 24;
-        this.isBold = false;
-        this.isItalic = false;
-        this.isUnderline = false;
-        this.hasBorder = false;
-        this.arrowHasBorder = false;
-        this.closeAfterAction = false;
-
-        // Zoom/Pan
-        this.scale = 1;
-        this.panX = 0;
-        this.panY = 0;
-        this.isPanning = false;
-
-        // History for undo/redo
-        /** @type {any[]} */
-        this.undoStack = [];
-        /** @type {any[]} */
-        this.redoStack = [];
-        this.maxHistory = 50;
-
-        /** @type {Record<string, number>} */
-        this.actionFeedbackTimers = {};
-        /** @type {number | null} */
-        this.resizeFitTimer = null;
-        /** @type {(() => void) | null} */
-        this.resizeListener = null;
-
-        this.init();
+  try {
+    const screenshot = await loadStoredScreenshot();
+    const mountNode = document.getElementById('tldraw-editor');
+    if (!mountNode) {
+      throw new Error('Screenshot editor mount node is missing.');
     }
 
-    async init() {
-        this.attachToolbarListeners();
-        this.attachCanvasListeners();
-        this.initTextDialog();
-        this.initTheme();
-        await this.loadSettings();
-        await this.ensureFontLoaded(this.fontFamily, this.fontSize, this.isBold, this.isItalic);
-        await this.loadImage();
-        this.updateUI();
-
-        // Auto-update when fonts load
-        document.fonts.ready.then(() => {
-            this.render();
-        });
-
-        this.resizeListener = this.handleWindowResize.bind(this);
-        window.addEventListener('resize', this.resizeListener);
-
-        window.addEventListener('beforeunload', () => {
-            if (this.resizeListener) {
-                window.removeEventListener('resize', this.resizeListener);
-                this.resizeListener = null;
-            }
-            if (this.resizeFitTimer !== null) {
-                window.clearTimeout(this.resizeFitTimer);
-                this.resizeFitTimer = null;
-            }
-            Object.values(this.actionFeedbackTimers).forEach((timerId) => {
-                window.clearTimeout(timerId);
-            });
-            this.actionFeedbackTimers = {};
-        });
-    }
-
-    /**
-     * Re-fit canvas after viewport changes, debounced to avoid excessive renders.
-     */
-    handleWindowResize() {
-        if (!this.backgroundImage) return;
-        if (this.resizeFitTimer !== null) {
-            window.clearTimeout(this.resizeFitTimer);
-        }
-        this.resizeFitTimer = window.setTimeout(() => {
-            this.fitToScreen();
-            this.render();
-            this.resizeFitTimer = null;
-        }, 120);
-    }
-
-    /**
-     * Initialize the text input dialog
-     */
-    initTextDialog() {
-        this.textDialog = /** @type {HTMLDialogElement} */ (document.getElementById('text-dialog'));
-        this.textDialogTitle = /** @type {HTMLHeadingElement} */ (document.getElementById('text-dialog-title'));
-        this.textDialogInput = /** @type {HTMLTextAreaElement} */ (document.getElementById('text-dialog-input'));
-        this.textDialogConfirm = /** @type {HTMLButtonElement} */ (document.getElementById('text-dialog-confirm'));
-        this.textDialogCancel = /** @type {HTMLButtonElement} */ (document.getElementById('text-dialog-cancel'));
-        
-        /** @type {((value: string | null) => void) | null} */
-        this.textDialogResolve = null;
-
-        // Handle confirm button
-        this.textDialogConfirm.addEventListener('click', () => {
-            const text = this.textDialogInput.value;
-            this.textDialog.close();
-            if (this.textDialogResolve) {
-                this.textDialogResolve(text || null);
-                this.textDialogResolve = null;
-            }
-        });
-
-        // Handle cancel button
-        this.textDialogCancel.addEventListener('click', () => {
-            this.textDialog.close();
-            if (this.textDialogResolve) {
-                this.textDialogResolve(null);
-                this.textDialogResolve = null;
-            }
-        });
-
-        // Handle backdrop click (close)
-        this.textDialog.addEventListener('close', () => {
-            if (this.textDialogResolve) {
-                this.textDialogResolve(null);
-                this.textDialogResolve = null;
-            }
-        });
-
-        // Handle Ctrl/Cmd+Enter to confirm
-        this.textDialogInput.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                e.preventDefault();
-                this.textDialogConfirm.click();
-            }
-            // ESC to cancel is handled by dialog default behavior
-        });
-    }
-
-    /**
-     * Show the text input dialog
-     * @param {string} [initialText] - Initial text to show in the textarea
-     * @param {boolean} [isEdit] - Whether this is editing existing text
-     * @returns {Promise<string | null>} - The entered text or null if cancelled
-     */
-    showTextDialog(initialText = '', isEdit = false) {
-        return new Promise((resolve) => {
-            this.textDialogResolve = resolve;
-            this.textDialogTitle.textContent = isEdit ? 'Edit Text' : 'Enter Text';
-            this.textDialogInput.value = initialText;
-            this.textDialog.showModal();
-            // Focus after dialog animation completes
-            setTimeout(() => {
-                this.textDialogInput.focus();
-                if (isEdit) {
-                    this.textDialogInput.select();
-                } else {
-                    // Move cursor to start for new text
-                    this.textDialogInput.setSelectionRange(0, 0);
-                }
-            }, 50);
-        });
-    }
-
-    initTheme() {
-        const updateTheme = (e) => {
-            const theme = e.matches ? 'dark' : 'light';
-            document.documentElement.setAttribute('data-theme', theme);
-        };
-
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        updateTheme(mediaQuery);
-        mediaQuery.addEventListener('change', updateTheme);
-    }
-
-    /**
-     * Ensures the selected font is loaded before text is measured/drawn on canvas.
-     * @param {string} fontFamily
-     * @param {number} fontSize
-     * @param {boolean} [isBold]
-     * @param {boolean} [isItalic]
-     * @returns {Promise<void>}
-     */
-    async ensureFontLoaded(fontFamily, fontSize, isBold = false, isItalic = false) {
-        if (!document.fonts || !fontFamily) return;
-
-        const style = isItalic ? 'italic' : 'normal';
-        const weight = isBold ? '700' : '400';
-        const size = Math.max(8, Math.round(fontSize || 24));
-        const safeFamily = `"${fontFamily.replace(/[\\"]/g, '\\$&')}"`;
-        const fontDescriptor = `${style} ${weight} ${size}px ${safeFamily}`;
-        if (document.fonts.check(fontDescriptor)) return;
-
-        try {
-            await Promise.race([
-                Promise.all([
-                    document.fonts.load(fontDescriptor),
-                    document.fonts.load(`normal 400 ${size}px ${safeFamily}`)
-                ]),
-                new Promise((resolve) => window.setTimeout(resolve, 1200))
-            ]);
-        } catch (error) {
-            console.warn('Failed to preload font:', error);
-        }
-    }
-
-    /**
-     * Loads editor settings from chrome.storage.local.
-     * @returns {Promise<void>}
-     */
-    async loadSettings() {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                const result = await chrome.storage.local.get('editorSettings');
-                if (result.editorSettings) {
-                    const s = result.editorSettings;
-                    if (s.color) this.color = s.color;
-                    this.opacity = 1;
-                    if (s.lineWidth !== undefined) this.lineWidth = s.lineWidth;
-
-                    if (s.rectLineWidth !== undefined) this.rectLineWidth = s.rectLineWidth;
-                    else if (s.lineWidth !== undefined) this.rectLineWidth = s.lineWidth;
-
-                    if (s.arrowLineWidth !== undefined) this.arrowLineWidth = s.arrowLineWidth;
-                    else if (s.lineWidth !== undefined) this.arrowLineWidth = s.lineWidth;
-
-                    if (s.highlightLineWidth !== undefined) this.highlightLineWidth = s.highlightLineWidth;
-
-                    if (s.fontFamily) this.fontFamily = s.fontFamily;
-                    if (s.fontSize !== undefined) this.fontSize = s.fontSize;
-                    if (s.isBold !== undefined) this.isBold = s.isBold;
-                    if (s.isItalic !== undefined) this.isItalic = s.isItalic;
-                    if (s.isUnderline !== undefined) this.isUnderline = s.isUnderline;
-                    if (s.hasBorder !== undefined) this.hasBorder = s.hasBorder;
-                    if (s.arrowHasBorder !== undefined) this.arrowHasBorder = s.arrowHasBorder;
-                    if (s.closeAfterAction !== undefined) this.closeAfterAction = s.closeAfterAction;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load settings', e);
-        }
-    }
-
-    async saveSettings() {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                await chrome.storage.local.set({
-                    editorSettings: {
-                        color: this.color,
-                        lineWidth: this.lineWidth,
-                        rectLineWidth: this.rectLineWidth,
-                        arrowLineWidth: this.arrowLineWidth,
-                        highlightLineWidth: this.highlightLineWidth,
-                        fontFamily: this.fontFamily,
-                        fontSize: this.fontSize,
-                        isBold: this.isBold,
-                        isItalic: this.isItalic,
-                        isUnderline: this.isUnderline,
-                        hasBorder: this.hasBorder,
-                        arrowHasBorder: this.arrowHasBorder,
-                        closeAfterAction: this.closeAfterAction
-                    }
-                });
-            }
-        } catch (e) {
-            console.error('Failed to save settings', e);
-        }
-    }
-
-    saveHistory() {
-        const snapshot = {
-            shapes: this.shapes.map(s => s.clone()),
-            backgroundImage: this.backgroundImage,
-            canvasWidth: this.canvas.width,
-            canvasHeight: this.canvas.height
-        };
-        this.undoStack.push(snapshot);
-        if (this.undoStack.length > this.maxHistory) {
-            this.undoStack.shift();
-        }
-        this.redoStack = []; // Clear redo on new action
-        this.updateUndoRedoUI();
-    }
-
-    undo() {
-        if (this.undoStack.length === 0) return;
-
-        const currentSnapshot = {
-            shapes: this.shapes.map(s => s.clone()),
-            backgroundImage: this.backgroundImage,
-            canvasWidth: this.canvas.width,
-            canvasHeight: this.canvas.height
-        };
-        this.redoStack.push(currentSnapshot);
-
-        const snapshot = this.undoStack.pop();
-        this.applySnapshot(snapshot);
-    }
-
-    redo() {
-        if (this.redoStack.length === 0) return;
-
-        const currentSnapshot = {
-            shapes: this.shapes.map(s => s.clone()),
-            backgroundImage: this.backgroundImage,
-            canvasWidth: this.canvas.width,
-            canvasHeight: this.canvas.height
-        };
-        this.undoStack.push(currentSnapshot);
-
-        const snapshot = this.redoStack.pop();
-        this.applySnapshot(snapshot);
-    }
-
-    /**
-     * @param {any} snapshot
-     */
-    applySnapshot(snapshot) {
-        this.shapes = snapshot.shapes.map(/** @param {Shape} s */ s => s.clone());
-        this.backgroundImage = snapshot.backgroundImage;
-        if (this.canvas) {
-            this.canvas.width = snapshot.canvasWidth;
-            this.canvas.height = snapshot.canvasHeight;
-        }
-        this.fitToScreen();
-        this.render();
-        this.updateUI();
-        this.updateUndoRedoUI();
-    }
-
-    updateUndoRedoUI() {
-        const undoBtn = /** @type {HTMLButtonElement} */ (document.getElementById('action-undo'));
-        const redoBtn = /** @type {HTMLButtonElement} */ (document.getElementById('action-redo'));
-        if (undoBtn) undoBtn.disabled = this.undoStack.length === 0;
-        if (redoBtn) redoBtn.disabled = this.redoStack.length === 0;
-    }
-
-    async loadImage() {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                const result = await chrome.storage.local.get('editorScreenshot');
-                const dataUrl = result.editorScreenshot;
-                if (dataUrl) {
-                    const img = new Image();
-                    this.backgroundImage = img;
-                    img.onload = () => {
-                        if (this.canvas && this.backgroundImage) {
-                            this.canvas.width = this.backgroundImage.width;
-                            this.canvas.height = this.backgroundImage.height;
-                            this.fitToScreen();
-                            this.render();
-                        }
-                    };
-                    img.src = dataUrl;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load image', e);
-        }
-    }
-
-    fitToScreen() {
-        if (!this.backgroundImage) return;
-        const containerW = this.container.clientWidth;
-        const containerH = this.container.clientHeight;
-        const imgW = this.canvas.width;
-        const imgH = this.canvas.height;
-
-        const scaleX = (containerW - 40) / imgW; // Padding
-        const scaleY = (containerH - 40) / imgH;
-        this.scale = Math.min(scaleX, scaleY, 1); // Don't zoom in by default if image is small
-
-        // Center
-        if (this.container && this.canvas) {
-            this.panX = (this.container.clientWidth - this.canvas.width) / 2;
-            this.panY = (this.container.clientHeight - this.canvas.height) / 2;
-        }
-
-        this.updateTransform();
-        this.updateZoomUI();
-    }
-
-    updateTransform() {
-        // We apply transform style to canvas for zoom/pan
-        // But for high DPI clarity we might want to scale the context?
-        // For simplicity and performance, CSS transform is good for view,
-        // but we need to map events correctly.
-        if (this.canvas) {
-            this.canvas.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
-            
-            // Better preview quality: Use smooth interpolation when zoomed out/normal,
-            // and pixelated when zoomed in to see details.
-            if (this.scale > 1.0) {
-                this.canvas.style.imageRendering = 'pixelated';
-            } else {
-                this.canvas.style.imageRendering = 'auto';
-            }
-        }
-    }
-
-    attachToolbarListeners() {
-        const tools = ['select', 'pan', 'crop', 'arrow', 'rect', 'highlight', 'text', 'blur'];
-        tools.forEach(t => {
-            const el = document.getElementById(`tool-${t}`);
-            if (el) el.addEventListener('click', () => this.setTool(t));
-        });
-        const toolSelectMobile = /** @type {HTMLSelectElement} */ (document.getElementById('tool-select-mobile'));
-        if (toolSelectMobile) toolSelectMobile.addEventListener('change', (e) => {
-            this.setTool(/** @type {HTMLSelectElement} */ (e.target).value);
-        });
-
-        // Zoom
-        const zoomIn = document.getElementById('zoom-in');
-        if (zoomIn) zoomIn.addEventListener('click', () => this.zoom(0.1));
-        const zoomOut = document.getElementById('zoom-out');
-        if (zoomOut) zoomOut.addEventListener('click', () => this.zoom(-0.1));
-        const zoomLevel = document.getElementById('zoom-level');
-        if (zoomLevel) zoomLevel.addEventListener('click', () => this.fitToScreen());
-
-        // Props
-        const propColor = /** @type {HTMLInputElement} */ (document.getElementById('prop-color'));
-        if (propColor) propColor.addEventListener('input', (e) => {
-            this.color = /** @type {HTMLInputElement} */ (e.target).value;
-            this.updateSelectedShape();
-            this.syncColorControls();
-            this.saveSettings();
-        });
-        const propColorMobile = /** @type {HTMLSelectElement} */ (document.getElementById('prop-color-mobile'));
-        if (propColorMobile) propColorMobile.addEventListener('change', (e) => {
-            this.saveHistory();
-            this.color = /** @type {HTMLSelectElement} */ (e.target).value;
-            this.updateSelectedShape();
-            this.syncColorControls();
-            this.saveSettings();
-        });
-        const propStroke = /** @type {HTMLInputElement} */ (document.getElementById('prop-stroke'));
-        if (propStroke) propStroke.addEventListener('input', (e) => {
-            const val = parseInt(/** @type {HTMLInputElement} */ (e.target).value);
-            this.updateCurrentLineWidth(val);
-            this.updateSelectedShape();
-            this.saveSettings();
-        });
-
-        ['prop-color', 'prop-color-mobile', 'prop-stroke'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('mousedown', () => this.saveHistory());
-        });
-
-        const propFontFamily = /** @type {HTMLSelectElement} */ (document.getElementById('prop-font-family'));
-        if (propFontFamily) propFontFamily.addEventListener('change', async (e) => {
-            this.saveHistory();
-            this.fontFamily = /** @type {HTMLSelectElement} */ (e.target).value;
-            await this.ensureFontLoaded(this.fontFamily, this.fontSize, this.isBold, this.isItalic);
-            this.updateSelectedShape();
-            this.render();
-            this.saveSettings();
-        });
-        const propFontSize = /** @type {HTMLInputElement} */ (document.getElementById('prop-font-size'));
-        if (propFontSize) propFontSize.addEventListener('change', (e) => {
-            this.saveHistory();
-            let newSize = parseInt(/** @type {HTMLInputElement} */ (e.target).value);
-            this.fontSize = Math.max(8, Math.min(1000, newSize));
-            this.updateSelectedShape();
-            this.saveSettings();
-        });
-
-        const deleteBtn = document.getElementById('action-delete');
-        if (deleteBtn) deleteBtn.addEventListener('click', () => this.deleteSelected());
-        const saveBtn = document.getElementById('action-save');
-        if (saveBtn) saveBtn.addEventListener('click', () => this.saveImage());
-        const copyBtn = document.getElementById('action-copy');
-        if (copyBtn) copyBtn.addEventListener('click', () => this.copyToClipboard());
-        const undoBtn = document.getElementById('action-undo');
-        if (undoBtn) undoBtn.addEventListener('click', () => this.undo());
-        const redoBtn = document.getElementById('action-redo');
-        if (redoBtn) redoBtn.addEventListener('click', () => this.redo());
-
-        // Color Presets
-        const colorPresets = document.getElementById('color-presets');
-        if (colorPresets) colorPresets.addEventListener('click', (e) => {
-            const preset = /** @type {HTMLElement} */ (e.target).closest('.color-preset');
-            if (preset) {
-                this.saveHistory();
-                const newColor = /** @type {HTMLElement} */ (preset).dataset.color;
-                if (newColor) {
-                    this.color = newColor;
-                    this.updateSelectedShape();
-                    this.syncColorControls();
-                    this.saveSettings();
-                }
-            }
-        });
-
-        // Text Styles (Bold, Italic, Underline, Border)
-        ['bold', 'italic', 'underline', 'border'].forEach(s => {
-            const el = document.getElementById(`prop-${s}`);
-            if (el) el.addEventListener('click', () => {
-                this.saveHistory();
-                if (s === 'bold') this.isBold = !this.isBold;
-                else if (s === 'italic') this.isItalic = !this.isItalic;
-                else if (s === 'underline') this.isUnderline = !this.isUnderline;
-                else if (s === 'border') this.hasBorder = !this.hasBorder;
-
-                this.updateSelectedShape();
-                this.saveSettings();
-                this.updateUI();
-            });
-        });
-
-        // Arrow Border
-        const arrowBorderBtn = document.getElementById('prop-arrow-border');
-        if (arrowBorderBtn) arrowBorderBtn.addEventListener('click', () => {
-            this.saveHistory();
-            this.arrowHasBorder = !this.arrowHasBorder;
-            this.updateSelectedShape();
-            this.saveSettings();
-            this.updateUI();
-        });
-
-        // Close after action toggle
-        const propCloseAfter = /** @type {HTMLInputElement} */ (document.getElementById('prop-close-after'));
-        if (propCloseAfter) propCloseAfter.addEventListener('change', (e) => {
-            this.closeAfterAction = /** @type {HTMLInputElement} */ (e.target).checked;
-            this.saveSettings();
-        });
-    }
-
-    /**
-     * @param {number} delta
-     */
-    zoom(delta) {
-        this.scale = Math.max(0.1, Math.min(5, this.scale + delta));
-        this.updateTransform();
-        this.updateZoomUI();
-    }
-
-    updateZoomUI() {
-        const zoomLevel = document.getElementById('zoom-level');
-        if (zoomLevel) zoomLevel.textContent = `${Math.round(this.scale * 100)}%`;
-    }
-
-    /**
-     * @param {string} tool
-     */
-    setTool(tool) {
-        this.tool = tool;
-        if (tool !== 'select') {
-            this.shapes.forEach(s => s.selected = false);
-            this.updateUI();
-        }
-        if (tool !== 'crop' && this.cropRect) {
-            this.cropRect = null;
-        }
-        // Set sensible defaults for highlight tool
-        if (tool === 'highlight') {
-            this.color = '#ffff00'; // Yellow
-            this.lineWidth = this.highlightLineWidth;
-        } else if (tool === 'rect') {
-            this.lineWidth = this.rectLineWidth;
-        } else if (tool === 'arrow') {
-            this.lineWidth = this.arrowLineWidth;
-        }
-        this.saveSettings();
-        this.render();
-        this.updateToolbarUI();
-        this.updateUI();
-    }
-
-    updateToolbarUI() {
-        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('btn-tool-active'));
-        const activeBtn = document.getElementById(`tool-${this.tool}`);
-        if(activeBtn) activeBtn.classList.add('btn-tool-active');
-        const toolSelectMobile = /** @type {HTMLSelectElement} */ (document.getElementById('tool-select-mobile'));
-        if (toolSelectMobile) toolSelectMobile.value = this.tool;
-
-        // Cursor
-        let cursor = 'default';
-        if (this.tool === 'pan') cursor = 'grab';
-        else if (this.tool === 'select') cursor = 'default';
-        else cursor = 'crosshair';
-        if (this.canvas) {
-            this.canvas.style.cursor = cursor;
-        }
-
-        // Visibility
-        const textProps = document.getElementById('text-props');
-        const arrowBorderProps = document.getElementById('arrow-border-props');
-        if (textProps) {
-            if (this.tool === 'text' || (this.getSelectedShape() instanceof TextShape)) {
-                textProps.classList.remove('hidden');
-            } else {
-                textProps.classList.add('hidden');
-            }
-        }
-        if (arrowBorderProps) {
-            if (this.tool === 'arrow' || (this.getSelectedShape() instanceof ArrowShape)) {
-                arrowBorderProps.classList.remove('hidden');
-            } else {
-                arrowBorderProps.classList.add('hidden');
-            }
-        }
-
-        const strokeProp = document.getElementById('stroke-prop');
-        if (strokeProp) {
-            if (this.tool === 'rect' || this.tool === 'arrow' || this.tool === 'highlight' || (this.getSelectedShape() instanceof RectShape) || (this.getSelectedShape() instanceof ArrowShape) || (this.getSelectedShape() instanceof HighlightShape)) {
-                strokeProp.classList.remove('hidden');
-            } else {
-                strokeProp.classList.add('hidden');
-            }
-        }
-    }
-
-    getSelectedShape() {
-        return this.shapes.find(s => s.selected);
-    }
-
-    /**
-     * @param {number} width
-     */
-    updateCurrentLineWidth(width) {
-        this.lineWidth = width;
-
-        // Update specific tool settings based on current context
-        if (this.tool === 'rect') {
-            this.rectLineWidth = width;
-        } else if (this.tool === 'highlight') {
-            this.highlightLineWidth = width;
-        } else if (this.tool === 'arrow') {
-            this.arrowLineWidth = width;
-        } else if (this.tool === 'select') {
-            // If we are modifying a selected shape, update the corresponding tool setting
-            const shape = this.getSelectedShape();
-            if (shape instanceof RectShape) {
-                this.rectLineWidth = width;
-            } else if (shape instanceof HighlightShape) {
-                this.highlightLineWidth = width;
-            } else if (shape instanceof ArrowShape) {
-                this.arrowLineWidth = width;
-            }
-        }
-    }
-
-    updateSelectedShape() {
-        const shape = this.getSelectedShape();
-        if (shape) {
-            shape.color = this.color;
-            shape.opacity = 1;
-            if (shape.lineWidth !== undefined) shape.lineWidth = this.lineWidth;
-            if (shape instanceof TextShape) {
-                shape.fontFamily = this.fontFamily;
-                shape.fontSize = this.fontSize;
-                shape.isBold = this.isBold;
-                shape.isItalic = this.isItalic;
-                shape.isUnderline = this.isUnderline;
-                shape.hasBorder = this.hasBorder;
-            }
-            if (shape instanceof ArrowShape) {
-                shape.hasBorder = this.arrowHasBorder;
-            }
-            this.render();
-        }
-    }
-
-    deleteSelected() {
-        if (this.shapes.some(s => s.selected)) {
-            this.saveHistory();
-            this.shapes = this.shapes.filter(s => !s.selected);
-            this.updateUI();
-            this.render();
-        }
-    }
-
-    updateUI() {
-        const shape = this.getSelectedShape();
-        const deleteBtn = /** @type {HTMLButtonElement} */ (document.getElementById('action-delete'));
-
-        // Always sync global state to UI first
-        this.syncColorControls();
-        const propStroke = /** @type {HTMLInputElement} */ (document.getElementById('prop-stroke'));
-        if (propStroke) propStroke.value = this.lineWidth.toString();
-        const propFontFamily = /** @type {HTMLSelectElement} */ (document.getElementById('prop-font-family'));
-        if (propFontFamily) propFontFamily.value = this.fontFamily;
-        const propFontSize = /** @type {HTMLInputElement} */ (document.getElementById('prop-font-size'));
-        if (propFontSize) propFontSize.value = this.fontSize.toString();
-        const propCloseAfter = /** @type {HTMLInputElement} */ (document.getElementById('prop-close-after'));
-        if (propCloseAfter) propCloseAfter.checked = this.closeAfterAction;
-
-        const textProps = document.getElementById('text-props');
-
-        if (shape) {
-            if (deleteBtn) deleteBtn.disabled = false;
-            this.color = shape.color;
-            this.syncColorControls();
-            if (shape.lineWidth && propStroke) propStroke.value = shape.lineWidth.toString();
-
-            if (shape instanceof TextShape) {
-                if (textProps) textProps.classList.remove('hidden');
-                if (propFontFamily) propFontFamily.value = shape.fontFamily;
-                if (propFontSize) propFontSize.value = shape.fontSize.toString();
-
-                // Sync global state from selected shape
-                this.fontFamily = shape.fontFamily;
-                this.fontSize = shape.fontSize;
-                this.isBold = shape.isBold;
-                this.isItalic = shape.isItalic;
-                this.isUnderline = shape.isUnderline;
-                this.hasBorder = shape.hasBorder;
-            } else {
-                 if (this.tool !== 'text' && textProps) textProps.classList.add('hidden');
-            }
-            if (shape instanceof ArrowShape) {
-                this.arrowHasBorder = shape.hasBorder;
-            }
-        } else {
-            if (deleteBtn) deleteBtn.disabled = true;
-            if (this.tool !== 'text' && textProps) textProps.classList.add('hidden');
-        }
-
-        // Sync Style Buttons (Bold, Italic, Underline, Border)
-        ['bold', 'italic', 'underline', 'border'].forEach(s => {
-            const btn = document.getElementById(`prop-${s}`);
-            if (btn) {
-                let isActive = false;
-                if (s === 'bold') isActive = this.isBold;
-                else if (s === 'italic') isActive = this.isItalic;
-                else if (s === 'underline') isActive = this.isUnderline;
-                else if (s === 'border') isActive = this.hasBorder;
-                btn.classList.toggle('btn-style-active', isActive);
-            }
-        });
-
-        // Sync Arrow Border Button
-        const arrowBorderBtn = document.getElementById('prop-arrow-border');
-        if (arrowBorderBtn) {
-            arrowBorderBtn.classList.toggle('btn-style-active', this.arrowHasBorder);
-        }
-
-        this.updateToolbarUI(); // To update visibility of stroke prop
-    }
-
-    /**
-     * @param {{x: number, y: number}} pos
-     * @returns {Shape | null}
-     */
-    getShapeAt(pos) {
-        for (let i = this.shapes.length - 1; i >= 0; i--) {
-            if (this.shapes[i].contains(pos.x, pos.y, this.ctx)) {
-                return this.shapes[i];
-            }
-        }
-        return null;
-    }
-
-    syncColorControls() {
-        const propColor = /** @type {HTMLInputElement} */ (document.getElementById('prop-color'));
-        if (propColor) propColor.value = this.color;
-        const propColorMobile = /** @type {HTMLSelectElement} */ (document.getElementById('prop-color-mobile'));
-        if (propColorMobile) {
-            let customOption = /** @type {HTMLOptionElement | null} */ (propColorMobile.querySelector('option[data-custom-color="true"]'));
-            const hasPreset = Array.from(propColorMobile.options).some((option) => option.value === this.color);
-            if (!hasPreset) {
-                if (!customOption) {
-                    customOption = document.createElement('option');
-                    customOption.dataset.customColor = 'true';
-                    propColorMobile.appendChild(customOption);
-                }
-                customOption.value = this.color;
-                customOption.textContent = 'Custom';
-            } else if (customOption) {
-                customOption.remove();
-            }
-            propColorMobile.value = this.color;
-        }
-    }
-
-    attachCanvasListeners() {
-        // Container listener for wheel zoom
-        this.container.addEventListener('wheel', (e) => {
-            if (e.ctrlKey) {
-                e.preventDefault();
-                this.zoom(e.deltaY > 0 ? -0.1 : 0.1);
-                return;
-            }
-
-            // Enhanced UX: Hover + scroll to adjust properties
-            const pos = this.getCanvasPos(e.clientX, e.clientY);
-            const shape = this.getShapeAt(pos);
-
-            if (shape) {
-                e.preventDefault();
-
-                // Auto-select the shape to provide visual feedback and stay in sync with UI properties
-                if (!shape.selected) {
-                    this.shapes.forEach(s => s.selected = false);
-                    shape.selected = true;
-                }
-
-                this.saveHistory();
-                const delta = e.deltaY > 0 ? -1 : 1;
-
-                if (shape instanceof TextShape) {
-                    const step = 2;
-                    shape.fontSize = Math.max(8, Math.min(1000, shape.fontSize + delta * step));
-                    this.fontSize = shape.fontSize; // Sync global prop
-                } else if (shape instanceof RectShape || shape instanceof ArrowShape || shape instanceof HighlightShape || shape instanceof BlurShape) {
-                    const s = /** @type {RectShape | ArrowShape | HighlightShape | BlurShape} */ (shape);
-                    if (s.lineWidth !== undefined) {
-                        const newVal = Math.max(1, Math.min(200, s.lineWidth + delta * 2));
-                        s.lineWidth = newVal;
-                        this.updateCurrentLineWidth(newVal);
-                    }
-                }
-
-                this.saveSettings();
-                this.render();
-                this.updateUI();
-            }
-        }, { passive: false });
-
-        // Event listeners on container/window to handle drag outside canvas
-        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        window.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        window.addEventListener('mouseup', this.handleMouseUp.bind(this));
-        this.canvas.addEventListener('dblclick', this.handleDoubleClick.bind(this));
-
-        window.addEventListener('keydown', (e) => {
-            // If active element is an input, don't trigger shortcuts
-            if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                return;
-            }
-
-            const isCmd = e.metaKey || e.ctrlKey;
-            const key = e.key.toLowerCase();
-
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                this.deleteSelected();
-                return;
-            }
-            if (e.key === 'Enter' && this.tool === 'crop' && this.cropRect) {
-                this.applyCrop();
-                return;
-            }
-
-            if (isCmd) {
-                if (key === 'z') {
-                    e.preventDefault();
-                    if (e.shiftKey) this.redo();
-                    else this.undo();
-                    return;
-                }
-                if (key === 'y') {
-                    e.preventDefault();
-                    this.redo();
-                    return;
-                }
-                if (e.key === '=' || e.key === '+') {
-                    e.preventDefault();
-                    this.zoom(0.1);
-                    return;
-                }
-                if (e.key === '-') {
-                    e.preventDefault();
-                    this.zoom(-0.1);
-                    return;
-                }
-                if (e.key === '0') {
-                    e.preventDefault();
-                    this.fitToScreen();
-                    return;
-                }
-            }
-
-            // Shortcuts
-            if (key === 'v' || key === 's') this.setTool('select');
-            if (key === 'q' || e.key === ' ') this.setTool('pan');
-            if (key === 'c') this.setTool('crop');
-            if (key === 'r') this.setTool('rect');
-            if (key === 'a') this.setTool('arrow');
-            if (key === 'h') this.setTool('highlight');
-            if (key === 't') this.setTool('text');
-            if (key === 'b') this.setTool('blur');
-        });
-    }
-
-    // Convert screen coordinates (clientX) to Canvas coordinates (accounting for scale/pan)
-    /**
-     * @param {number} clientX
-     * @param {number} clientY
-     * @returns {{x: number, y: number}}
-     */
-    getCanvasPos(clientX, clientY) {
-        if (!this.canvas) return { x: 0, y: 0 };
-        const rect = this.canvas.getBoundingClientRect();
-        return {
-            x: (clientX - rect.left) / this.scale,
-            y: (clientY - rect.top) / this.scale
-        };
-    }
-
-    /**
-     * @param {MouseEvent} e
-     */
-    async handleDoubleClick(e) {
-        if (this.tool !== 'select') return;
-        const pos = this.getCanvasPos(e.clientX, e.clientY);
-
-        for (let i = this.shapes.length - 1; i >= 0; i--) {
-            const shape = this.shapes[i];
-            if (shape instanceof TextShape && shape.contains(pos.x, pos.y, this.ctx)) {
-                this.saveHistory();
-                const textShape = /** @type {TextShape} */ (shape);
-                const newText = await this.showTextDialog(textShape.text, true);
-                if (newText !== null) {
-                    textShape.text = newText;
-                    await this.ensureFontLoaded(textShape.fontFamily, textShape.fontSize, textShape.isBold, textShape.isItalic);
-                    this.render();
-                } else {
-                    // If cancelled, remove the history state we just added
-                    this.undoStack.pop();
-                    this.updateUndoRedoUI();
-                }
-                break;
-            }
-        }
-    }
-
-    /**
-     * @param {MouseEvent} e
-     */
-    handleMouseDown(e) {
-        const pos = this.getCanvasPos(e.clientX, e.clientY);
-        this.dragStart = { x: e.clientX, y: e.clientY }; // Screen coords for panning
-        this.lastPos = pos; // Canvas coords for drawing
-        this.isDragging = true;
-        this.draggingHandle = null;
-
-        if (this.tool === 'pan') {
-            this.isPanning = true;
-            this.canvas.style.cursor = 'grabbing';
-            return;
-        }
-
-        if (this.tool === 'select') {
-            // Check handles
-            const selected = this.getSelectedShape();
-            if (selected) {
-                const handles = selected.getHandles();
-                for (let h of handles) {
-                    if (Math.abs(pos.x - h.x) < 8/this.scale && Math.abs(pos.y - h.y) < 8/this.scale) {
-                        this.saveHistory();
-                        this.draggingHandle = { shape: selected, type: h.type };
-                        return;
-                    }
-                }
-            }
-
-            // Hit test
-            let hit = false;
-            for (let i = this.shapes.length - 1; i >= 0; i--) {
-                if (this.shapes[i].contains(pos.x, pos.y, this.ctx)) {
-                    this.saveHistory();
-                    this.shapes.forEach(s => s.selected = false);
-                    this.shapes[i].selected = true;
-                    this.currentShape = this.shapes[i];
-                    hit = true;
-                    this.shapes.push(this.shapes.splice(i, 1)[0]);
-                    break;
-                }
-            }
-            if (!hit) {
-                this.shapes.forEach(s => s.selected = false);
-                this.currentShape = null;
-            }
-            this.updateUI();
-            this.render();
-        } else if (this.tool === 'crop') {
-            if (this.cropRect) {
-                 // Check Action Buttons
-                 if (this.cropConfirmBtn && 
-                     pos.x >= this.cropConfirmBtn.x && pos.x <= this.cropConfirmBtn.x + this.cropConfirmBtn.w &&
-                     pos.y >= this.cropConfirmBtn.y && pos.y <= this.cropConfirmBtn.y + this.cropConfirmBtn.h) {
-                     this.applyCrop();
-                     return;
-                 }
-                 if (this.cropCancelBtn && 
-                     pos.x >= this.cropCancelBtn.x && pos.x <= this.cropCancelBtn.x + this.cropCancelBtn.w &&
-                     pos.y >= this.cropCancelBtn.y && pos.y <= this.cropCancelBtn.y + this.cropCancelBtn.h) {
-                     this.cancelCrop();
-                     return;
-                 }
-
-                 this.cropHandle = this.getCropHandle(pos.x, pos.y);
-                 if (this.cropHandle && this.cropHandle !== 'move') {
-                     // Reposition rect so (r.x, r.y) is at the anchor (opposite corner of the handle)
-                     const r = this.cropRect;
-                     let nx = r.w < 0 ? r.x + r.w : r.x;
-                     let ny = r.h < 0 ? r.y + r.h : r.y;
-                     let nw = Math.abs(r.w);
-                     let nh = Math.abs(r.h);
-                     
-                     switch (this.cropHandle) {
-                         case 'nw': r.x = nx + nw; r.y = ny + nh; break;
-                         case 'ne': r.x = nx; r.y = ny + nh; break;
-                         case 'sw': r.x = nx + nw; r.y = ny; break;
-                         case 'se': r.x = nx; r.y = ny; break;
-                     }
-                     r.w = pos.x - r.x;
-                     r.h = pos.y - r.y;
-                 } else if (!this.cropHandle) {
-                     this.cropRect = { x: pos.x, y: pos.y, w: 0, h: 0 };
-                     this.cropHandle = 'se';
-                 }
-            } else {
-                this.cropRect = { x: pos.x, y: pos.y, w: 0, h: 0 };
-                this.cropHandle = 'se';
-            }
-        } else if (this.tool === 'rect') {
-            this.saveHistory();
-            this.currentShape = new RectShape(pos.x, pos.y, 0, 0, this.color, this.opacity, this.lineWidth);
-            this.shapes.push(this.currentShape);
-        } else if (this.tool === 'blur') {
-            this.saveHistory();
-            this.currentShape = new BlurShape(pos.x, pos.y, 0, 0, this.opacity);
-            this.shapes.push(this.currentShape);
-        } else if (this.tool === 'arrow') {
-            this.saveHistory();
-            this.currentShape = new ArrowShape(pos.x, pos.y, pos.x, pos.y, this.color, this.opacity, this.lineWidth, this.arrowHasBorder);
-            this.shapes.push(this.currentShape);
-        } else if (this.tool === 'highlight') {
-            this.saveHistory();
-            this.currentShape = new HighlightShape(pos.x, pos.y, pos.x, pos.y, this.color, this.opacity, this.lineWidth);
-            this.shapes.push(this.currentShape);
-        } else if (this.tool === 'text') {
-            this.isDragging = false;
-            // Store position for async dialog
-            const textX = pos.x;
-            const textY = pos.y;
-            this.showTextDialog('').then(async (text) => {
-                if (text) {
-                    await this.ensureFontLoaded(this.fontFamily, this.fontSize, this.isBold, this.isItalic);
-                    this.saveHistory();
-                    const shape = new TextShape(textX, textY, text, this.color, this.opacity, this.fontFamily, this.fontSize, this.isBold, this.isItalic, this.isUnderline, this.hasBorder);
-                    this.shapes.push(shape);
-                    shape.selected = true;
-                    this.tool = 'select';
-                    this.updateToolbarUI();
-                    this.updateUI();
-                    this.render();
-                }
-            });
-        }
-    }
-
-    /**
-     * @param {MouseEvent} e
-     */
-    handleMouseMove(e) {
-        if (this.isPanning) {
-            const dx = e.clientX - this.dragStart.x;
-            const dy = e.clientY - this.dragStart.y;
-            this.panX += dx;
-            this.panY += dy;
-            this.dragStart = { x: e.clientX, y: e.clientY };
-            this.updateTransform();
-            return;
-        }
-
-        const pos = this.getCanvasPos(e.clientX, e.clientY);
-        const dx = pos.x - this.lastPos.x;
-        const dy = pos.y - this.lastPos.y;
-
-        // Update cursors if not dragging
-        if (!this.isDragging) {
-             this.lastPos = pos;
-             if (this.tool === 'select') {
-                const selected = this.getSelectedShape();
-                let cursor = 'default';
-                if (selected) {
-                     const handles = selected.getHandles();
-                     for (let h of handles) {
-                         if (Math.abs(pos.x - h.x) < 8/this.scale && Math.abs(pos.y - h.y) < 8/this.scale) {
-                             cursor = h.cursor;
-                             break;
-                         }
-                     }
-                     if (cursor === 'default' && selected.contains(pos.x, pos.y, this.ctx)) {
-                         cursor = 'move';
-                     }
-                } else {
-                     for (let i = this.shapes.length - 1; i >= 0; i--) {
-                        if (this.shapes[i].contains(pos.x, pos.y, this.ctx)) {
-                            cursor = 'move';
-                            break;
-                        }
-                    }
-                }
-                this.canvas.style.cursor = cursor;
-            } else if (this.tool === 'crop' && this.cropRect) {
-                 // Check Action Buttons for cursor
-                 if ((this.cropConfirmBtn && 
-                      pos.x >= this.cropConfirmBtn.x && pos.x <= this.cropConfirmBtn.x + this.cropConfirmBtn.w &&
-                      pos.y >= this.cropConfirmBtn.y && pos.y <= this.cropConfirmBtn.y + this.cropConfirmBtn.h) ||
-                     (this.cropCancelBtn && 
-                      pos.x >= this.cropCancelBtn.x && pos.x <= this.cropCancelBtn.x + this.cropCancelBtn.w &&
-                      pos.y >= this.cropCancelBtn.y && pos.y <= this.cropCancelBtn.y + this.cropCancelBtn.h)) {
-                     this.canvas.style.cursor = 'pointer';
-                 } else {
-                     const handle = this.getCropHandle(pos.x, pos.y);
-                     if (handle) this.canvas.style.cursor = handle === 'move' ? 'move' : 'nwse-resize';
-                     else this.canvas.style.cursor = 'crosshair';
-                 }
-            }
-            return;
-        }
-
-        // Processing Drag
-        this.lastPos = pos;
-
-                if (this.tool === 'select') {
-                    if (this.draggingHandle) {
-                        const shape = this.draggingHandle.shape;
-                        let targetX = pos.x;
-                        let targetY = pos.y;
-                        
-                        // Apply Shift constraint for HighlightShape handles
-                        if (e.shiftKey && shape instanceof HighlightShape) {
-                            const hs = /** @type {HighlightShape} */ (shape);
-                            // Determine the anchor point (the other end of the line)
-                            const anchorX = this.draggingHandle.type === 'start' ? hs.x2 : hs.x1;
-                            const anchorY = this.draggingHandle.type === 'start' ? hs.y2 : hs.y1;
-                            
-                            const deltaX = Math.abs(pos.x - anchorX);
-                            const deltaY = Math.abs(pos.y - anchorY);
-                            
-                            if (deltaX > deltaY) {
-                                // Horizontal line
-                                targetY = anchorY;
-                            } else {
-                                // Vertical line
-                                targetX = anchorX;
-                            }
-                        }
-                        
-                        shape.updateHandle(this.draggingHandle.type, targetX, targetY, targetX - this.lastPos.x, targetY - this.lastPos.y);
-                        if (shape === this.getSelectedShape()) {
-                            this.updateUI();
-                        }
-                        this.render();
-                    } else if (this.currentShape) {
-                        this.currentShape.move(dx, dy);
-                        this.render();
-                    }
-        } else if ((this.tool === 'rect' || this.tool === 'blur') && this.currentShape) {
-            const s = /** @type {RectShape | BlurShape} */ (this.currentShape);
-            s.w = pos.x - s.x;
-            s.h = pos.y - s.y;
-            this.render();
-        } else if (this.tool === 'arrow' && this.currentShape) {
-            const s = /** @type {ArrowShape} */ (this.currentShape);
-            s.x2 = pos.x;
-            s.y2 = pos.y;
-            this.render();
-        } else if (this.tool === 'highlight' && this.currentShape) {
-            const s = /** @type {HighlightShape} */ (this.currentShape);
-            // Shift key constrains to horizontal or vertical
-            if (e.shiftKey) {
-                const deltaX = Math.abs(pos.x - s.x1);
-                const deltaY = Math.abs(pos.y - s.y1);
-                if (deltaX > deltaY) {
-                    // Horizontal line
-                    s.x2 = pos.x;
-                    s.y2 = s.y1;
-                } else {
-                    // Vertical line
-                    s.x2 = s.x1;
-                    s.y2 = pos.y;
-                }
-            } else {
-                s.x2 = pos.x;
-                s.y2 = pos.y;
-            }
-            this.render();
-        } else if (this.tool === 'crop' && this.cropRect) {
-            this.updateCropRect(pos.x, pos.y, dx, dy);
-            this.render();
-        }
-    }
-
-    /**
-     * @param {MouseEvent} e
-     */
-    handleMouseUp(e) {
-        if (this.isPanning) {
-            this.isPanning = false;
-            this.canvas.style.cursor = 'grab';
-            return;
-        }
-
-        this.isDragging = false;
-        this.draggingHandle = null;
-        if (this.tool === 'rect' || this.tool === 'arrow' || this.tool === 'highlight' || this.tool === 'blur') {
-            if (this.currentShape) {
-                this.currentShape.selected = true;
-                this.tool = 'select';
-                this.updateToolbarUI();
-                this.updateUI();
-                this.render();
-            }
-        }
-        this.currentShape = null;
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @returns {string | null}
-     */
-    getCropHandle(x, y) {
-        const r = this.cropRect;
-        if (!r) return null;
-        const handles = {
-            nw: [r.x, r.y],
-            ne: [r.x + r.w, r.y],
-            sw: [r.x, r.y + r.h],
-            se: [r.x + r.w, r.y + r.h]
-        };
-        const dist = 18 / this.scale;
-        for (let h in handles) {
-            const [hx, hy] = /** @type {Record<string, number[]>} */ (handles)[h];
-            if (Math.abs(x - hx) < dist && Math.abs(y - hy) < dist) return h;
-        }
-
-        let nx = r.w < 0 ? r.x + r.w : r.x;
-        let ny = r.h < 0 ? r.y + r.h : r.y;
-        let nw = Math.abs(r.w);
-        let nh = Math.abs(r.h);
-
-        if (x >= nx && x <= nx + nw && y >= ny && y <= ny + nh) return 'move';
-        return null;
-    }
-
-    /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} dx
-     * @param {number} dy
-     */
-    updateCropRect(x, y, dx, dy) {
-        const r = this.cropRect;
-        if (!r) return;
-
-        // Canvas bounds
-        const maxW = this.canvas.width;
-        const maxH = this.canvas.height;
-
-        if (this.cropHandle === 'move') {
-            // Get current normalized bounds for move clamping
-            let nx = r.w < 0 ? r.x + r.w : r.x;
-            let ny = r.h < 0 ? r.y + r.h : r.y;
-            let nw = Math.abs(r.w);
-            let nh = Math.abs(r.h);
-
-            // Proposed new position
-            let newNx = nx + dx;
-            let newNy = ny + dy;
-
-            // Clamp
-            if (newNx < 0) dx = -nx;
-            if (newNx + nw > maxW) dx = maxW - (nx + nw);
-            if (newNy < 0) dy = -ny;
-            if (newNy + nh > maxH) dy = maxH - (ny + nh);
-
-            r.x += dx;
-            r.y += dy;
-        } else {
-            // Clamp mouse position
-            const mx = Math.max(0, Math.min(x, maxW));
-            const my = Math.max(0, Math.min(y, maxH));
-
-            // Anchor is fixed at (r.x, r.y) - set during mousedown
-            // Just update width and height based on mouse position
-            r.w = mx - r.x;
-            r.h = my - r.y;
-        }
-    }
-
-    applyCrop() {
-        if (!this.cropRect) return;
-
-        const r = this.cropRect;
-        let nx = r.w < 0 ? r.x + r.w : r.x;
-        let ny = r.h < 0 ? r.y + r.h : r.y;
-        let nw = Math.abs(r.w);
-        let nh = Math.abs(r.h);
-
-        nx = Math.max(0, nx);
-        ny = Math.max(0, ny);
-        nw = Math.min(nw, this.canvas.width - nx);
-        nh = Math.min(nh, this.canvas.height - ny);
-
-        if (nw <= 0 || nh <= 0 || !this.canvas) return;
-
-        this.saveHistory();
-        this.tool = 'select';
-        this.render();
-
-        const data = this.ctx.getImageData(nx, ny, nw, nh);
-        this.canvas.width = nw;
-        this.canvas.height = nh;
-        this.ctx.putImageData(data, 0, 0);
-
-        const newImg = new Image();
-        newImg.onload = () => {
-            this.backgroundImage = newImg;
-            this.shapes = [];
-            this.cropRect = null;
-            this.fitToScreen(); // Re-fit after crop
-            this.render();
-        };
-        newImg.src = this.canvas.toDataURL();
-
-        this.tool = 'select';
-        this.updateToolbarUI();
-    }
-
-    cancelCrop() {
-        this.cropRect = null;
-        this.render();
-    }
-
-    render() {
-        if (!this.backgroundImage) return;
-
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.drawImage(this.backgroundImage, 0, 0);
-
-        this.ctx.save();
-        this.shapes.forEach(shape => shape.draw(this.ctx, this.backgroundImage || undefined));
-        this.ctx.restore();
-
-        if (this.tool === 'crop' && this.cropRect) {
-            this.drawCropOverlay();
-        }
-    }
-
-    drawCropOverlay() {
-        const ctx = this.ctx;
-        const r = this.cropRect;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        if (!r) return;
-        let nx = r.w < 0 ? r.x + r.w : r.x;
-        let ny = r.h < 0 ? r.y + r.h : r.y;
-        let nw = Math.abs(r.w);
-        let nh = Math.abs(r.h);
-
-        // Draw overlay in 4 parts
-        ctx.fillRect(0, 0, this.canvas.width, ny);
-        ctx.fillRect(0, ny + nh, this.canvas.width, this.canvas.height - (ny + nh));
-        ctx.fillRect(0, ny, nx, nh);
-        ctx.fillRect(nx + nw, ny, this.canvas.width - (nx + nw), nh);
-
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
-        ctx.strokeRect(nx, ny, nw, nh);
-
-        ctx.fillStyle = '#fff';
-        const handles = [
-            [nx, ny], [nx + nw, ny],
-            [nx, ny + nh], [nx + nw, ny + nh]
-        ];
-        const hSize = 8 / this.scale;
-        handles.forEach(([hx, hy]) => ctx.fillRect(hx - hSize/2, hy - hSize/2, hSize, hSize));
-
-        // Draw Action Buttons (Confirm and Cancel)
-        if (nw > 40 && nh > 40) {
-            const btnSize = 32 / this.scale;
-            const margin = 10 / this.scale;
-            const gap = 8 / this.scale;
-            const pillHeight = btnSize + margin * 2;
-
-            const bx = nx + nw - (btnSize * 2 + gap + margin * 2);
-            let by = ny + nh + margin;
-
-            if (by + pillHeight > this.canvas.height) {
-                by = ny + nh - margin - pillHeight;
-            }
-
-            // Pill Background
-            ctx.setLineDash([]);
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-            ctx.shadowBlur = 10 / this.scale;
-            ctx.shadowOffsetY = 2 / this.scale;
-            
-            ctx.fillStyle = 'rgba(45, 55, 72, 0.9)'; // Dark slate gray
-            ctx.beginPath();
-            ctx.roundRect(bx, by, btnSize * 2 + gap + margin * 2, btnSize + margin * 2, (btnSize + margin * 2) / 2);
-            ctx.fill();
-
-            // Reset shadow
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetY = 0;
-
-            // Confirm Button Circle
-            this.cropConfirmBtn = { x: bx + margin, y: by + margin, w: btnSize, h: btnSize };
-            ctx.fillStyle = '#22c55e'; // Modern emerald green
-            ctx.beginPath();
-            ctx.arc(this.cropConfirmBtn.x + btnSize/2, this.cropConfirmBtn.y + btnSize/2, btnSize/2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw Checkmark Icon
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2.5 / this.scale;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.beginPath();
-            const cx = this.cropConfirmBtn.x + btnSize/2;
-            const cy = this.cropConfirmBtn.y + btnSize/2;
-            ctx.moveTo(cx - btnSize * 0.2, cy);
-            ctx.lineTo(cx - btnSize * 0.05, cy + btnSize * 0.15);
-            ctx.lineTo(cx + btnSize * 0.2, cy - btnSize * 0.2);
-            ctx.stroke();
-
-            // Cancel Button Circle
-            this.cropCancelBtn = { x: bx + margin + btnSize + gap, y: by + margin, w: btnSize, h: btnSize };
-            ctx.fillStyle = '#ef4444'; // Modern rose red
-            ctx.beginPath();
-            ctx.arc(this.cropCancelBtn.x + btnSize/2, this.cropCancelBtn.y + btnSize/2, btnSize/2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw Cross Icon
-            ctx.beginPath();
-            const xcx = this.cropCancelBtn.x + btnSize/2;
-            const xcy = this.cropCancelBtn.y + btnSize/2;
-            const s = btnSize * 0.18;
-            ctx.moveTo(xcx - s, xcy - s);
-            ctx.lineTo(xcx + s, xcy + s);
-            ctx.moveTo(xcx + s, xcy - s);
-            ctx.lineTo(xcx - s, xcy + s);
-            ctx.stroke();
-        } else {
-            this.cropConfirmBtn = null;
-            this.cropCancelBtn = null;
-        }
-
-        ctx.restore();
-    }
-
-    getExportCanvas() {
-        // If crop is active (visible but not applied), use it for export
-        // Otherwise use full canvas
-        if (!this.canvas) return document.createElement('canvas'); // Should not happen
-        let exportX = 0, exportY = 0, exportW = this.canvas.width, exportH = this.canvas.height;
-
-        if (this.tool === 'crop' && this.cropRect) {
-             const r = this.cropRect;
-             let nx = r.w < 0 ? r.x + r.w : r.x;
-             let ny = r.h < 0 ? r.y + r.h : r.y;
-             let nw = Math.abs(r.w);
-             let nh = Math.abs(r.h);
-
-             // Clamp
-             nx = Math.max(0, nx);
-             ny = Math.max(0, ny);
-             nw = Math.min(nw, this.canvas.width - nx);
-             nh = Math.min(nh, this.canvas.height - ny);
-
-             if (nw > 0 && nh > 0) {
-                 exportX = nx; exportY = ny; exportW = nw; exportH = nh;
-             }
-        }
-
-        // Create temp canvas
-        const tCanvas = document.createElement('canvas');
-        tCanvas.width = exportW;
-        tCanvas.height = exportH;
-        const tCtx = tCanvas.getContext('2d');
-        if (!tCtx) return tCanvas;
-
-        // Render current state to main canvas first (without overlay)
-        const prevTool = this.tool;
-        const prevCrop = this.cropRect;
-
-        // Temporarily disable tool overlay for rendering
-        this.tool = 'select'; // or 'none'
-        this.cropRect = null;
-        this.render();
-
-        // Copy to temp canvas
-        tCtx.drawImage(this.canvas, exportX, exportY, exportW, exportH, 0, 0, exportW, exportH);
-
-        // Restore
-        this.tool = prevTool;
-        this.cropRect = /** @type {any} */ (prevCrop);
-        this.render();
-
-        return tCanvas;
-    }
-
-    saveImage() {
-        this.shapes.forEach(s => s.selected = false);
-        this.render();
-
-        const canvas = this.getExportCanvas();
-
-        const link = document.createElement('a');
-        link.download = `screenshot-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.jpg`;
-        link.href = canvas.toDataURL('image/jpeg', 0.9);
-        link.click();
-        this.showActionSuccessIcon('action-save');
-
-        if (this.closeAfterAction) {
-            setTimeout(() => window.close(), 500);
-        }
-    }
-
-    /**
-     * @returns {string}
-     */
-    getSuccessIconSvg() {
-        return '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-    }
-
-    /**
-     * @param {string} buttonId
-     */
-    showActionSuccessIcon(buttonId) {
-        const btn = /** @type {HTMLButtonElement | null} */ (document.getElementById(buttonId));
-        if (!btn) return;
-
-        if (!btn.dataset.originalIconHtml) {
-            btn.dataset.originalIconHtml = btn.innerHTML;
-        }
-
-        const existingTimer = this.actionFeedbackTimers[buttonId];
-        if (existingTimer) {
-            window.clearTimeout(existingTimer);
-        }
-
-        btn.innerHTML = this.getSuccessIconSvg();
-        this.actionFeedbackTimers[buttonId] = window.setTimeout(() => {
-            if (btn.dataset.originalIconHtml) {
-                btn.innerHTML = btn.dataset.originalIconHtml;
-            }
-            delete this.actionFeedbackTimers[buttonId];
-        }, 2000);
-    }
-
-    async copyToClipboard() {
-        this.shapes.forEach(s => s.selected = false);
-        this.render();
-
-        const canvas = this.getExportCanvas();
-
-        try {
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-            await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-            ]);
-            this.showActionSuccessIcon('action-copy');
-
-            if (this.closeAfterAction) {
-                setTimeout(() => window.close(), 500);
-            }
-        } catch (err) {
-            console.error('Failed to copy', err);
-            alert('Failed to copy to clipboard.');
-        }
-    }
+    const root = createRoot(mountNode);
+    root.render(h(ScreenshotEditorApp, { screenshot }));
+  } catch (error) {
+    console.error('[editor] Failed to initialize screenshot editor:', error);
+    setStatus(error instanceof Error ? error.message : 'Failed to initialize screenshot editor.');
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    /** @type {any} */ (window).editor = new Editor('editor-canvas', 'canvas-container');
+  void init();
 });

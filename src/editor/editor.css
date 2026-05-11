@@ -1,349 +1,128 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Gloria+Hallelujah&family=Pacifico&family=SN+Pro:ital,wght@0,200..900;1,200..900&display=swap');
-
 :root {
     --navbar-height: 52px;
 }
 
+html,
 body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    height: 100%;
 }
 
-#editor-canvas {
-    touch-action: none;
-    /* image-rendering: pixelated; removed for better quality */
+body {
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-#canvas-container {
-    background-color: var(--color-base-200);
-    background-image: radial-gradient(color-mix(in srgb, var(--color-base-content), transparent 80%) 1px, transparent 1px);
-    background-size: 20px 20px;
+.screenshot-editor-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
 }
 
 .glass-nav {
     backdrop-filter: blur(8px);
-    background-color: color-mix(in srgb, var(--color-base-100), transparent 20%);
+    background-color: color-mix(in srgb, var(--color-base-100), transparent 12%);
     border-bottom: 1px solid var(--color-base-300);
 }
 
-.editor-toolbar {
-    gap: 10px;
-    overflow: hidden;
-}
-
-.editor-toolbar > * {
-    min-width: 0;
-}
-
-.toolbar-cluster {
-    min-width: 0;
-}
-
-.toolbar-cluster-right {
-    margin-left: auto;
-}
-
-.toolbar-mobile-select {
-    font-size: 11px;
-    line-height: 1.1;
-}
-
-@media (max-width: 1200px) {
-    .editor-toolbar {
-        height: 46px !important;
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-        gap: 8px;
-    }
-
-    .toolbar-cluster {
-        gap: 8px !important;
-    }
-
-    .toolbar-properties {
-        gap: 10px !important;
-    }
-
-    .editor-toolbar .btn.btn-sm {
-        min-height: 1.75rem;
-        height: 1.75rem;
-    }
-
-    .editor-toolbar .btn.btn-sm.btn-square {
-        width: 1.75rem;
-    }
-
-    .editor-toolbar .divider-vertical {
-        margin: 0 2px;
-        height: 18px;
-    }
-
-    .toolbar-zoom #zoom-level {
-        min-width: 36px;
-        padding-left: 6px;
-        padding-right: 6px;
-    }
-
-    #prop-font-family {
-        width: 7.5rem;
-    }
-}
-
-@media (max-width: 1024px) {
-    .editor-toolbar {
-        gap: 6px;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
-    }
-
-    .shortcut-badge {
-        display: none;
-    }
-
-    .toolbar-mobile-select {
-        display: inline-flex !important;
-    }
-
-    .toolbar-tools,
-    .color-button-group {
-        display: none !important;
-    }
-
-    .toolbar-zoom-step {
-        display: none;
-    }
-
-    .toolbar-cluster {
-        gap: 6px !important;
-    }
-
-    .toolbar-properties {
-        gap: 6px !important;
-    }
-
-    .toolbar-mobile-select#tool-select-mobile {
-        width: 7.25rem;
-    }
-
-    .toolbar-mobile-select#prop-color-mobile {
-        width: 6rem;
-    }
-
-    #prop-font-family {
-        width: 6.5rem;
-    }
-
-    #prop-font-size {
-        width: 2.75rem;
-    }
-}
-
-@media (max-width: 860px) {
-    .editor-toolbar {
-        justify-content: flex-start !important;
-        gap: 6px;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
-    }
-
-    .editor-toolbar .divider-vertical {
-        display: none;
-    }
-
-    .toolbar-properties {
-        gap: 8px !important;
-    }
-}
-
-@media (max-width: 680px) {
-    .editor-toolbar {
-        height: 42px !important;
-        gap: 4px;
-    }
-
-    .prop-label {
-        display: none;
-    }
-
-    #stroke-prop {
-        width: 3rem !important;
-    }
-
-    .toolbar-zoom {
-        gap: 2px !important;
-        padding-left: 2px !important;
-        padding-right: 2px !important;
-    }
-
-    .toolbar-primary-actions {
-        gap: 6px !important;
-    }
-
-    .toolbar-primary-join .btn.btn-sm {
-        min-height: 1.75rem;
-        height: 1.75rem;
-    }
-}
-
-/* Tool active state */
-.btn-tool-active {
-    background-color: var(--color-primary) !important;
-    color: var(--color-primary-content) !important;
-}
-
-.btn-style-active {
-    background-color: color-mix(in srgb, var(--color-primary), transparent 20%) !important;
-    color: var(--color-primary-content) !important;
-}
-
-/* Custom range styles for better look */
-.range-compact {
-    height: 4px;
-}
-
-.divider-vertical {
-    width: 1px;
-    height: 24px;
-    background-color: var(--color-base-300);
-    margin: 0 4px;
-}
-
-.prop-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-base-content);
-    opacity: 0.6;
-    margin-bottom: 2px;
-}
-
-.input-color-custom {
-    width: 24px;
-    height: 22px;
-    padding: 0;
-    border: 0;
-    border-right: 1px solid var(--color-base-300);
-    border-radius: 0;
-    overflow: hidden;
-    cursor: pointer;
-}
-
-.input-color-custom::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-
-.input-color-custom::-webkit-color-swatch {
-    border: none;
-}
-
-.color-button-group {
+.screenshot-editor-toolbar {
     display: flex;
     align-items: center;
-    border: 1px solid var(--color-base-300);
-    border-radius: 6px;
-    overflow: hidden;
+    justify-content: space-between;
+    gap: 12px;
+    height: var(--navbar-height);
+    padding: 0 14px;
+    flex: 0 0 auto;
 }
 
-.color-presets {
+.toolbar-title {
     display: flex;
-    gap: 0;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
 }
 
-.color-preset {
-    width: 18px;
-    height: 22px;
+.toolbar-title-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-base-content);
+    white-space: nowrap;
+}
+
+.toolbar-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--color-base-content), transparent 45%);
+    white-space: nowrap;
+}
+
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.close-after-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
     cursor: pointer;
-    border: 0;
-    border-left: 1px solid var(--color-base-300);
-    transition: filter 0.1s ease;
 }
 
-.color-preset:first-child {
-    border-left: 0;
-}
-
-.color-preset:hover {
-    filter: brightness(0.95);
-}
-
-.color-preset:active {
-    filter: brightness(0.9);
-}
-
-/* Tool Shortcut Badges */
-.tool-btn {
+.screenshot-editor-main {
     position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--color-base-200);
 }
 
-.shortcut-badge {
+.tldraw-editor {
     position: absolute;
-    bottom: 2px;
-    right: 2px;
-    background-color: color-mix(in srgb, var(--color-base-content), transparent 20%);
-    color: var(--color-base-100);
-    font-size: 8px;
-    font-weight: 800;
-    width: 11px;
-    height: 11px;
+    inset: 0;
+}
+
+.editor-status {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 2;
+    transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 3px;
-    line-height: 1;
-    pointer-events: none;
-    border: 1px solid var(--color-base-100);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    text-transform: uppercase;
-    z-index: 5;
+    min-width: 220px;
+    min-height: 40px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-base-300);
+    border-radius: 8px;
+    background: var(--color-base-100);
+    color: color-mix(in srgb, var(--color-base-content), transparent 25%);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 12px 30px color-mix(in srgb, #000, transparent 88%);
 }
 
-.btn-tool-active .shortcut-badge {
-    background-color: var(--color-base-100);
-    color: var(--color-primary);
-    border-color: var(--color-primary);
+.editor-status.hidden {
+    display: none;
 }
 
-.sn-pro {
-    font-family: "SN Pro", sans-serif;
-    font-optical-sizing: auto;
-    font-style: normal;
+.tl-container {
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.pacifico-regular {
-    font-family: "Pacifico", cursive;
-    font-weight: 400;
-    font-style: normal;
-}
-
-.gloria-hallelujah-regular {
-    font-family: "Gloria Hallelujah", cursive;
-    font-weight: 400;
-    font-style: normal;
-}
-
-/* Text Dialog Styles */
-#text-dialog .modal-box {
-    animation: modal-pop 0.2s ease-out;
-}
-
-#text-dialog-input {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    line-height: 1.5;
-}
-
-#text-dialog-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary), transparent 80%);
-}
-
-@keyframes modal-pop {
-    0% {
-        opacity: 0;
-        transform: scale(0.95);
+@media (max-width: 640px) {
+    :root {
+        --navbar-height: 46px;
     }
-    100% {
-        opacity: 1;
-        transform: scale(1);
+
+    .screenshot-editor-toolbar {
+        padding: 0 10px;
+    }
+
+    .toolbar-subtitle {
+        display: none;
     }
 }
