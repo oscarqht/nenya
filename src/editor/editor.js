@@ -39,6 +39,7 @@ const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'li
  * @property {any} editor
  * @property {string | null} screenshotShapeId
  * @property {any} bounds
+ * @property {boolean} isCroppingScreenshot
  * @property {boolean} closeAfterAction
  * @property {Record<string, number>} actionFeedbackTimers
  * @property {AnnotationStylePreferences} annotationStylePreferences
@@ -50,6 +51,7 @@ const editorState = {
   editor: null,
   screenshotShapeId: null,
   bounds: null,
+  isCroppingScreenshot: false,
   closeAfterAction: false,
   actionFeedbackTimers: {},
   annotationStylePreferences: { version: 1, shapes: {} },
@@ -467,6 +469,161 @@ function bindAnnotationStylePreferences(editor) {
 }
 
 /**
+ * @returns {HTMLButtonElement | null}
+ */
+function getCropButton() {
+  return /** @type {HTMLButtonElement | null} */ (document.getElementById('action-crop'));
+}
+
+/**
+ * @param {boolean} active
+ * @returns {void}
+ */
+function setCropButtonActive(active) {
+  const button = getCropButton();
+  if (!button) return;
+  button.classList.toggle('btn-active', active);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
+}
+
+/**
+ * @returns {any | null}
+ */
+function getScreenshotShape() {
+  const { editor, screenshotShapeId } = editorState;
+  if (!editor || !screenshotShapeId) return null;
+  return editor.getShape?.(screenshotShapeId) || null;
+}
+
+/**
+ * @returns {void}
+ */
+function updateScreenshotExportBounds() {
+  const { editor, screenshotShapeId } = editorState;
+  if (!editor || !screenshotShapeId) return;
+
+  const bounds = editor.getShapePageBounds?.(screenshotShapeId);
+  if (bounds) {
+    editorState.bounds = bounds;
+  }
+}
+
+/**
+ * @param {boolean} locked
+ * @returns {void}
+ */
+function setScreenshotLocked(locked) {
+  const { editor } = editorState;
+  const shape = getScreenshotShape();
+  if (!editor || !shape || shape.isLocked === locked) return;
+
+  editor.run(
+    () => {
+      editor.updateShape({
+        id: shape.id,
+        type: shape.type,
+        isLocked: locked,
+      });
+    },
+    { history: 'ignore', ignoreShapeLock: true }
+  );
+}
+
+/**
+ * @returns {boolean}
+ */
+function isScreenshotCropModeActive() {
+  const { editor, screenshotShapeId } = editorState;
+  if (!editor || !screenshotShapeId) return false;
+
+  const croppingShapeId = editor.getCroppingShapeId?.();
+  if (croppingShapeId === screenshotShapeId) return true;
+
+  const selectedShapeIds = editor.getSelectedShapeIds?.() || [];
+  return selectedShapeIds.includes(screenshotShapeId) && Boolean(editor.isIn?.('select.crop'));
+}
+
+/**
+ * @returns {void}
+ */
+function syncScreenshotCropState() {
+  const active = isScreenshotCropModeActive();
+  setCropButtonActive(active);
+  updateScreenshotExportBounds();
+
+  if (editorState.isCroppingScreenshot && !active) {
+    editorState.isCroppingScreenshot = false;
+    setScreenshotLocked(true);
+    updateScreenshotExportBounds();
+  }
+}
+
+/**
+ * @param {any} editor
+ * @returns {() => void}
+ */
+function bindScreenshotCropState(editor) {
+  let syncFrame = 0;
+  const scheduleSync = () => {
+    if (syncFrame) return;
+    syncFrame = window.requestAnimationFrame(() => {
+      syncFrame = 0;
+      syncScreenshotCropState();
+    });
+  };
+
+  const disposeStoreListener = editor.store.listen(scheduleSync);
+  document.addEventListener('pointerup', scheduleSync, true);
+  document.addEventListener('keydown', scheduleSync, true);
+
+  return () => {
+    if (syncFrame) {
+      window.cancelAnimationFrame(syncFrame);
+    }
+    document.removeEventListener('pointerup', scheduleSync, true);
+    document.removeEventListener('keydown', scheduleSync, true);
+    disposeStoreListener?.();
+  };
+}
+
+/**
+ * @param {EventTarget | null} target
+ * @returns {boolean}
+ */
+function isEditableShortcutTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
+}
+
+/**
+ * @param {KeyboardEvent} event
+ * @returns {boolean}
+ */
+function isCropShortcutEvent(event) {
+  return (
+    event.key.toLowerCase() === 'c' &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !isEditableShortcutTarget(event.target) &&
+    !editorState.editor?.getEditingShapeId?.()
+  );
+}
+
+/**
+ * @param {KeyboardEvent} event
+ * @returns {void}
+ */
+function handleScreenshotEditorShortcut(event) {
+  if (!isCropShortcutEvent(event) || isScreenshotCropModeActive()) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  startScreenshotCrop();
+}
+
+/**
  * @param {any} editor
  * @param {ScreenshotInfo} screenshot
  * @returns {void}
@@ -526,20 +683,78 @@ function insertScreenshot(editor, screenshot) {
 }
 
 /**
+ * @returns {void}
+ */
+function startScreenshotCrop() {
+  if (isScreenshotCropModeActive()) {
+    finishScreenshotCrop();
+    return;
+  }
+
+  const { editor, screenshotShapeId } = editorState;
+  const shape = getScreenshotShape();
+
+  if (!editor || !screenshotShapeId || !shape) {
+    alert('Screenshot editor is not ready yet.');
+    return;
+  }
+
+  editor.complete?.();
+  editor.run(
+    () => {
+      editor.updateShape({
+        id: shape.id,
+        type: shape.type,
+        isLocked: false,
+      });
+      editor.select(screenshotShapeId);
+      editor.setCroppingShape?.(screenshotShapeId);
+      editor.setCurrentTool('select.crop.idle');
+    },
+    { history: 'ignore', ignoreShapeLock: true }
+  );
+
+  editorState.isCroppingScreenshot = true;
+  setCropButtonActive(true);
+}
+
+/**
+ * @returns {void}
+ */
+function finishScreenshotCrop() {
+  const { editor } = editorState;
+  if (!editor || (!editorState.isCroppingScreenshot && !isScreenshotCropModeActive())) return;
+
+  editor.complete?.();
+  editor.setCroppingShape?.(null);
+  editor.setCurrentTool?.('select.idle');
+  editorState.isCroppingScreenshot = false;
+  setScreenshotLocked(true);
+  setCropButtonActive(false);
+  updateScreenshotExportBounds();
+}
+
+/**
  * @param {'png' | 'jpeg'} format
  * @returns {Promise<Blob>}
  */
 async function exportAnnotatedScreenshot(format) {
-  const { editor, bounds } = editorState;
-  if (!editor || !bounds) {
+  const { editor } = editorState;
+  if (!editor || !editorState.bounds) {
     throw new Error('Screenshot editor is not ready yet.');
   }
 
+  finishScreenshotCrop();
   editor.selectNone();
+  updateScreenshotExportBounds();
+  if (!editorState.bounds) {
+    throw new Error('Screenshot editor is not ready yet.');
+  }
+
   const shapeIds = Array.from(editor.getCurrentPageShapeIds());
   const result = await editor.toImage(shapeIds, {
     format,
-    bounds,
+    bounds: editorState.bounds,
     background: true,
     padding: 0,
     pixelRatio: Math.max(1, Math.min(2, window.devicePixelRatio || 1)),
@@ -629,8 +844,12 @@ function ScreenshotEditorApp({ screenshot }) {
       editorState.editor = editor;
       insertScreenshot(editor, screenshot);
       const disposeAnnotationStylePreferences = bindAnnotationStylePreferences(editor);
+      const disposeScreenshotCropState = bindScreenshotCropState(editor);
       hideStatus();
-      return disposeAnnotationStylePreferences;
+      return () => {
+        disposeAnnotationStylePreferences();
+        disposeScreenshotCropState();
+      };
     },
     [screenshot]
   );
@@ -658,6 +877,10 @@ function bindActions() {
     saveCloseAfterActionPreference(editorState.closeAfterAction);
   });
 
+  getCropButton()?.addEventListener('click', () => {
+    startScreenshotCrop();
+  });
+  document.addEventListener('keydown', handleScreenshotEditorShortcut, true);
   document.getElementById('action-copy')?.addEventListener('click', () => {
     void copyToClipboard();
   });

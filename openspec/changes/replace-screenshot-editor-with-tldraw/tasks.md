@@ -16,6 +16,7 @@
 - [x] 3.6 Remove or isolate obsolete custom canvas editor code.
 - [x] 3.7 Persist and reuse tldraw annotation style options by annotation kind.
 - [x] 3.8 Persist and restore the close-after-action checkbox value.
+- [x] 3.9 Add screenshot crop mode, keyboard shortcut, and cropped-bounds export support.
 
 ## 4. Verification
 - [x] 4.1 Run `openspec validate replace-screenshot-editor-with-tldraw --strict`.

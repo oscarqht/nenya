@@ -30,6 +30,15 @@ The extension MUST support capturing a screenshot of the current tab and opening
 - **AND** the exported image MUST be downloaded with a timestamped screenshot filename
 - **AND** the editor MUST show action feedback when saving succeeds
 
+#### Scenario: Crop screenshot before export
+
+- **GIVEN** the screenshot editor contains a captured screenshot
+- **WHEN** the user chooses Crop or presses the `c` keyboard shortcut
+- **THEN** the editor MUST enter tldraw image crop mode for the captured screenshot
+- **AND** the user MUST be able to adjust the crop using tldraw crop controls
+- **AND** the screenshot MUST return to locked background behavior after crop mode ends
+- **AND** Copy and Save MUST export using the cropped screenshot bounds
+
 #### Scenario: Preserve close-after-action preference
 
 - **GIVEN** the user changes the Close after copy or save checkbox in the screenshot editor
