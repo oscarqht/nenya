@@ -12,6 +12,7 @@ import {
 const ANNOTATION_STYLE_PREFERENCES_KEY = 'editorAnnotationStylePreferences';
 const CLOSE_AFTER_ACTION_KEY = 'editorCloseAfterAction';
 const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'line', 'note', 'text']);
+const SHARED_ANNOTATION_STYLE_IDS = new Set(['tldraw:color']);
 
 /**
  * @typedef {Object} AnnotationStylePreference
@@ -24,6 +25,7 @@ const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'li
  * @typedef {Object} AnnotationStylePreferences
  * @property {number} version
  * @property {Record<string, AnnotationStylePreference>} shapes
+ * @property {Record<string, string | number | boolean>} sharedStylesForNextShape
  */
 
 /**
@@ -54,7 +56,7 @@ const editorState = {
   isCroppingScreenshot: false,
   closeAfterAction: false,
   actionFeedbackTimers: {},
-  annotationStylePreferences: { version: 1, shapes: {} },
+  annotationStylePreferences: { version: 1, shapes: {}, sharedStylesForNextShape: {} },
   stylePreferencesSaveTimer: null,
 };
 
@@ -177,13 +179,26 @@ function isSerializableStyleValue(value) {
  */
 function normalizeAnnotationStylePreferences(value) {
   if (!value || typeof value !== 'object') {
-    return { version: 1, shapes: {} };
+    return { version: 1, shapes: {}, sharedStylesForNextShape: {} };
   }
 
-  const source = /** @type {{ shapes?: unknown }} */ (value);
+  const source = /** @type {{ shapes?: unknown, sharedStylesForNextShape?: unknown }} */ (value);
   const shapes = source.shapes && typeof source.shapes === 'object' ? source.shapes : {};
   /** @type {Record<string, AnnotationStylePreference>} */
   const normalizedShapes = {};
+  /** @type {Record<string, string | number | boolean>} */
+  const sharedStylesForNextShape = {};
+
+  if (
+    source.sharedStylesForNextShape &&
+    typeof source.sharedStylesForNextShape === 'object'
+  ) {
+    for (const [styleId, styleValue] of Object.entries(source.sharedStylesForNextShape)) {
+      if (SHARED_ANNOTATION_STYLE_IDS.has(styleId) && isSerializableStyleValue(styleValue)) {
+        sharedStylesForNextShape[styleId] = styleValue;
+      }
+    }
+  }
 
   for (const [key, preference] of Object.entries(shapes)) {
     if (!preference || typeof preference !== 'object') continue;
@@ -221,7 +236,7 @@ function normalizeAnnotationStylePreferences(value) {
     }
   }
 
-  return { version: 1, shapes: normalizedShapes };
+  return { version: 1, shapes: normalizedShapes, sharedStylesForNextShape };
 }
 
 /**
@@ -331,6 +346,52 @@ function getAnnotationStylePreferenceForShape(editor, shape) {
 }
 
 /**
+ * @param {Record<string, string | number | boolean>} styles
+ * @returns {Record<string, string | number | boolean>}
+ */
+function getSharedAnnotationStyles(styles) {
+  /** @type {Record<string, string | number | boolean>} */
+  const sharedStyles = {};
+
+  for (const [styleId, value] of Object.entries(styles)) {
+    if (SHARED_ANNOTATION_STYLE_IDS.has(styleId) && isSerializableStyleValue(value)) {
+      sharedStyles[styleId] = value;
+    }
+  }
+
+  return sharedStyles;
+}
+
+/**
+ * @param {Record<string, string | number | boolean>} styles
+ * @returns {void}
+ */
+function rememberSharedAnnotationStyles(styles) {
+  const sharedStyles = getSharedAnnotationStyles(styles);
+  if (Object.keys(sharedStyles).length === 0) return;
+
+  editorState.annotationStylePreferences = {
+    version: 1,
+    shapes: editorState.annotationStylePreferences.shapes,
+    sharedStylesForNextShape: {
+      ...editorState.annotationStylePreferences.sharedStylesForNextShape,
+      ...sharedStyles,
+    },
+  };
+  scheduleAnnotationStylePreferencesSave();
+}
+
+/**
+ * @param {any} editor
+ * @returns {void}
+ */
+function rememberSharedAnnotationStylesFromEditor(editor) {
+  const styles = editor?.getInstanceState?.()?.stylesForNextShape;
+  if (!styles || typeof styles !== 'object') return;
+  rememberSharedAnnotationStyles(styles);
+}
+
+/**
  * @param {any} editor
  * @returns {{ key: string } | null}
  */
@@ -353,7 +414,9 @@ function getCurrentAnnotationStylePreferenceTarget(editor) {
  */
 function applyAnnotationStylePreference(editor, key) {
   const preference = editorState.annotationStylePreferences.shapes[key];
-  if (!preference) return;
+  const sharedStyles = editorState.annotationStylePreferences.sharedStylesForNextShape;
+
+  if (!preference && Object.keys(sharedStyles).length === 0) return;
 
   const instanceState = editor.getInstanceState?.();
   if (!instanceState) return;
@@ -362,11 +425,12 @@ function applyAnnotationStylePreference(editor, key) {
   const nextState = {
     stylesForNextShape: {
       ...(instanceState.stylesForNextShape || {}),
-      ...preference.stylesForNextShape,
+      ...(preference?.stylesForNextShape || {}),
+      ...sharedStyles,
     },
   };
 
-  if (preference.opacityForNextShape !== undefined) {
+  if (preference?.opacityForNextShape !== undefined) {
     nextState.opacityForNextShape = preference.opacityForNextShape;
   }
 
@@ -390,6 +454,7 @@ function applyCurrentAnnotationStylePreference(editor) {
  */
 function rememberAnnotationStylePreference(key, preference) {
   if (!preference) return;
+  rememberSharedAnnotationStyles(preference.stylesForNextShape);
 
   editorState.annotationStylePreferences = {
     version: 1,
@@ -397,6 +462,7 @@ function rememberAnnotationStylePreference(key, preference) {
       ...editorState.annotationStylePreferences.shapes,
       [key]: preference,
     },
+    sharedStylesForNextShape: editorState.annotationStylePreferences.sharedStylesForNextShape,
   };
   scheduleAnnotationStylePreferencesSave();
 }
@@ -432,9 +498,13 @@ function bindAnnotationStylePreferences(editor) {
   applyCurrentAnnotationStylePreference(editor);
 
   const scheduleApplyCurrentPreference = () => {
-    window.requestAnimationFrame(() => applyCurrentAnnotationStylePreference(editor));
+    window.requestAnimationFrame(() => {
+      rememberSharedAnnotationStylesFromEditor(editor);
+      applyCurrentAnnotationStylePreference(editor);
+    });
   };
   const applyBeforeCreatingShape = () => {
+    rememberSharedAnnotationStylesFromEditor(editor);
     applyCurrentAnnotationStylePreference(editor);
   };
 
