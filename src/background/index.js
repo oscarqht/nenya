@@ -64,7 +64,6 @@ import {
   isLLMPage,
   getLLMProviderFromURL,
 } from '../shared/llmProviders.js';
-import { handlePictureInPicture } from './pip-handler.js';
 import {
   handleScreenRecordingToggle,
   handleActionClickDuringRecording,
@@ -265,39 +264,6 @@ chrome.commands.onCommand.addListener((command) => {
         }
       } catch (error) {
         console.warn('[commands] Save clipboard to Unsorted failed:', error);
-      }
-    })();
-    return;
-  }
-
-  if (command === 'pip-quit') {
-    void (async () => {
-      try {
-        const storage = await chrome.storage.local.get('pipTabId');
-        const { pipTabId } = storage;
-
-        if (pipTabId) {
-          await chrome.scripting.executeScript({
-            target: { tabId: pipTabId },
-            func: () => {
-              if (document.pictureInPictureElement) {
-                const pipVideo = document.pictureInPictureElement;
-                document.exitPictureInPicture();
-                // Pause the video after exiting PiP
-                if (pipVideo instanceof HTMLVideoElement && !pipVideo.paused) {
-                  pipVideo.pause();
-                }
-              }
-            },
-          });
-          await chrome.storage.local.remove('pipTabId');
-        } else {
-          console.warn(
-            '[commands] ⚠️ No pipTabId found in storage! Cannot quit PiP.',
-          );
-        }
-      } catch (error) {
-        console.error('[commands] Quit PiP failed:', error);
       }
     })();
     return;
@@ -1092,6 +1058,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     } catch (error) {
       console.error('[migration] Pinned items migration failed:', error);
     }
+
   }
 
   if (details.reason === 'install' || details.reason === 'update') {
@@ -1107,11 +1074,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         'src/contentScript/block-elements.js',
         'src/contentScript/custom-js-css.js',
       ],
-      [
-        'src/contentScript/video-controller.js',
-      ],
     ];
-    const cssFiles = ['src/contentScript/video-controller.css'];
 
     const injectionPromises = allTabs
       .filter(
@@ -1125,18 +1088,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         const tabId = tab.id;
         return (async () => {
           try {
-            await Promise.all(
-              cssFiles.map((file) =>
-                chrome.scripting
-                  .insertCSS({ target: { tabId }, files: [file] })
-                  .catch((e) =>
-                    console.warn(
-                      `CSS injection failed for ${file} in tab ${tabId}:`,
-                      e,
-                    ),
-                  ),
-              ),
-            );
             for (const scriptGroup of contentScripts) {
               await chrome.scripting
                 .executeScript({ target: { tabId }, files: scriptGroup })
@@ -3762,14 +3713,6 @@ if (chrome.contextMenus) {
     if (menuItemId === NENYA_MENU_IDS.SCREEN_RECORDING) {
       if (tab && typeof tab.id === 'number') {
         void handleScreenRecordingToggle(tab.id);
-      }
-      return;
-    }
-
-    // Picture in Picture
-    if (menuItemId === NENYA_MENU_IDS.PIP) {
-      if (tab && typeof tab.id === 'number') {
-        void handlePictureInPicture(tab.id);
       }
       return;
     }

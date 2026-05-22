@@ -124,7 +124,7 @@ Manual backups SHALL serialize all configurable options into a plain JSON payloa
 #### Scenario: Backup includes normalized categories without Automerge metadata
 
 - **WHEN** a manual backup builds its payload
-- **THEN** it SHALL include normalized values for `mirrorRootFolderSettings`, `notificationPreferences`, `autoReloadRules`, `darkModeRules`, `brightModeWhitelist`/`brightModeSettings`, `highlightTextRules`, `videoEnhancementRules`, `blockElementRules`, `customCodeRules`, `llmPrompts`, `urlProcessRules`, `autoGoogleLoginRules`, `screenshotSettings`, `titleTransformRules`, `pinnedShortcuts`, **and `customSearchEngines`**
+- **THEN** it SHALL include normalized values for `mirrorRootFolderSettings`, `notificationPreferences`, `autoReloadRules`, `darkModeRules`, `brightModeWhitelist`/`brightModeSettings`, `highlightTextRules`, `blockElementRules`, `customCodeRules`, `llmPrompts`, `urlProcessRules`, `autoGoogleLoginRules`, `screenshotSettings`, `titleTransformRules`, `pinnedShortcuts`, **and `customSearchEngines`**
 - **AND** the payload SHALL omit Automerge metadata and SHALL store only plain JSON fields
 - **AND** restore SHALL overwrite the corresponding local keys, applying defaults when fields are missing.
 

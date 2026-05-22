@@ -88,11 +88,7 @@
         "<all_urls>"
       ],
       "js": [
-        "src/contentScript/video-controller.js",
         "src/contentScript/auto-google-login.js"
-      ],
-      "css": [
-        "src/contentScript/video-controller.css"
       ],
       "run_at": "document_idle"
     },
@@ -133,12 +129,6 @@
     },
     "copy-screenshot": {
       "description": "📋 Copy Screenshot"
-    },
-    "pip-quit": {
-      "suggested_key": {
-        "default": "Alt+Q"
-      },
-      "description": "🎥 Quit PiP"
     },
     "tabs-activate-left-tab": {
       "description": "🗂️ Activate left tab"

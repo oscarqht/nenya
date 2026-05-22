@@ -82,17 +82,6 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
  */
 
 /**
- * @typedef {Object} VideoEnhancementRuleSettings
- * @property {string} id
- * @property {string} pattern
- * @property {'url-pattern' | 'wildcard'} patternType
- * @property {{ autoFullscreen: boolean }} enhancements
- * @property {boolean} [disabled]
- * @property {string} [createdAt]
- * @property {string} [updatedAt]
- */
-
-/**
  * @typedef {Object} BlockElementRuleSettings
  * @property {string} id
  * @property {string} urlPattern
@@ -485,102 +474,6 @@ function normalizeBrightModePatterns(value) {
   });
 
   return sanitized.sort((a, b) => a.pattern.localeCompare(b.pattern));
-}
-
-/**
- * Validate wildcard patterns used by video enhancements.
- * @param {string} pattern
- * @returns {boolean}
- */
-function isValidEnhancementWildcardPattern(pattern) {
-  const value = pattern.trim();
-  if (!value) {
-    return false;
-  }
-  return !/\s/.test(value);
-}
-
-/**
- * Normalize video enhancement rules from storage or input.
- * @param {unknown} value
- * @returns {VideoEnhancementRuleSettings[]}
- */
-function normalizeVideoEnhancementRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {VideoEnhancementRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, patternType?: unknown, enhancements?: { autoFullscreen?: unknown }, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!pattern) {
-      return;
-    }
-
-    /** @type {'url-pattern' | 'wildcard'} */
-    const patternType =
-      raw.patternType === 'wildcard' ? 'wildcard' : 'url-pattern';
-
-    if (
-      (patternType === 'url-pattern' && !isValidUrlPattern(pattern)) ||
-      (patternType === 'wildcard' &&
-        !isValidEnhancementWildcardPattern(pattern))
-    ) {
-      console.warn(
-        '[importExport:videoEnhancements] Ignoring invalid pattern:',
-        pattern,
-      );
-      return;
-    }
-
-    const autoFullscreen =
-      typeof raw.enhancements?.autoFullscreen === 'boolean'
-        ? raw.enhancements.autoFullscreen
-        : false;
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {VideoEnhancementRuleSettings} */
-    const normalized = {
-      id,
-      pattern,
-      patternType,
-      enhancements: {
-        autoFullscreen,
-      },
-      disabled: Boolean(raw.disabled),
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => {
-    const aTime = Date.parse(a.createdAt || '') || 0;
-    const bTime = Date.parse(b.createdAt || '') || 0;
-    if (aTime === bTime) {
-      return a.pattern.localeCompare(b.pattern);
-    }
-    return bTime - aTime;
-  });
 }
 
 /**
@@ -1195,7 +1088,6 @@ function normalizePinnedShortcuts(value) {
     'brightMode',
     'darkMode',
     'customCode',
-    'pictureInPicture',
     'takeScreenshot',
     'screenRecording',
     'emojiPicker',

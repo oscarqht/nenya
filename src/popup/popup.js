@@ -230,12 +230,6 @@ const SHORTCUT_CONFIG = {
     handler: () => void handleCustomCode(),
     key: 'j',
   },
-  pictureInPicture: {
-    emoji: '🖼️',
-    tooltip: 'Picture in Picture',
-    handler: () => void handlePictureInPicture(),
-    key: 'p',
-  },
   takeScreenshot: {
     emoji: '📸',
     tooltip: 'Take screenshot',
@@ -338,7 +332,6 @@ let autoReloadButton = null;
 let brightModeButton = null;
 let darkModeButton = null;
 let customCodeButton = null;
-let pictureInPictureButton = null;
 let takeScreenshotButton = null;
 
 
@@ -386,6 +379,14 @@ async function loadAndRenderShortcuts() {
       await chrome.storage.local.set({ [STORAGE_KEY]: pinnedIds });
     }
 
+    const filteredPinnedIds = pinnedIds.filter((id) =>
+      Object.prototype.hasOwnProperty.call(SHORTCUT_CONFIG, id),
+    );
+    if (filteredPinnedIds.length !== pinnedIds.length) {
+      pinnedIds = filteredPinnedIds;
+      await chrome.storage.local.set({ [STORAGE_KEY]: pinnedIds });
+    }
+
     // If no shortcuts are pinned, use defaults.
     const shortcutsToRender = pinnedIds.length > 0
       ? pinnedIds
@@ -410,7 +411,6 @@ async function loadAndRenderShortcuts() {
     brightModeButton = null;
     darkModeButton = null;
     customCodeButton = null;
-    pictureInPictureButton = null;
 
     // Render buttons based on pinned shortcuts
     filteredShortcuts.forEach((shortcutId) => {
@@ -478,9 +478,6 @@ async function loadAndRenderShortcuts() {
           break;
         case 'customCode':
           customCodeButton = button;
-          break;
-        case 'pictureInPicture':
-          pictureInPictureButton = button;
           break;
         case 'takeScreenshot':
           takeScreenshotButton = button;
@@ -2702,171 +2699,6 @@ async function handleScreenRecording() {
     if (statusMessage) {
       concludeStatus(
         'Unable to start screen recording.',
-        'error',
-        3000,
-        statusMessage,
-      );
-    }
-  }
-}
-
-/**
- * Handle Picture-in-Picture mode for the largest video in the current tab.
- * @returns {Promise<void>}
- */
-async function handlePictureInPicture() {
-  try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      if (statusMessage) {
-        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    const currentTab = tabs[0];
-
-    // Check if tab has a valid ID
-    if (typeof currentTab.id !== 'number') {
-      if (statusMessage) {
-        concludeStatus('Invalid tab ID.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    // Inject script to find largest video and trigger PiP
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: currentTab.id },
-        func: async () => {
-          // Find all video elements
-          const videos = Array.from(document.querySelectorAll('video'));
-
-          if (videos.length === 0) {
-            return {
-              success: false,
-              error: 'No video elements found on this page.',
-            };
-          }
-
-          // Find the largest video by area (width * height)
-          let largestVideo = null;
-          let largestArea = 0;
-
-          for (const video of videos) {
-            // Get video dimensions, prefer actual video dimensions over display size
-            const width = video.videoWidth || video.clientWidth || 0;
-            const height = video.videoHeight || video.clientHeight || 0;
-            const area = width * height;
-
-            if (area > largestArea) {
-              largestArea = area;
-              largestVideo = video;
-            }
-          }
-
-          if (!largestVideo) {
-            return { success: false, error: 'No valid video element found.' };
-          }
-
-          // Set up event listeners for PiP if not already set up
-          if (!largestVideo.hasAttribute('data-pip-listeners-set')) {
-            largestVideo.setAttribute('data-pip-listeners-set', 'true');
-
-            largestVideo.addEventListener('leavepictureinpicture', () => {
-              chrome.storage.local.remove('pipTabId');
-              if (!largestVideo.paused) {
-                largestVideo.pause();
-              }
-            });
-          }
-
-          try {
-            // Check if Picture-in-Picture is already active
-            if (document.pictureInPictureElement) {
-              // Exit PiP if same video
-              if (document.pictureInPictureElement === largestVideo) {
-                await document.exitPictureInPicture();
-                return { success: true, action: 'exited' };
-              }
-              // Exit current PiP first, then enter new one
-              await document.exitPictureInPicture();
-              await largestVideo.requestPictureInPicture();
-              return { success: true, action: 'entered' };
-            }
-
-            // Request Picture-in-Picture
-            await largestVideo.requestPictureInPicture();
-            return { success: true, action: 'entered' };
-          } catch (error) {
-            return { success: false, error: error.message || String(error) };
-          }
-        },
-      });
-
-      const result = results?.[0]?.result;
-      if (!result) {
-        if (statusMessage) {
-          concludeStatus(
-            'Failed to trigger Picture-in-Picture.',
-            'error',
-            3000,
-            statusMessage,
-          );
-        }
-        return;
-      }
-
-      if (!result.success) {
-        if (statusMessage) {
-          concludeStatus(
-            result.error || 'Failed to trigger Picture-in-Picture.',
-            'error',
-            3000,
-            statusMessage,
-          );
-        }
-        return;
-      }
-
-      // If PiP was entered successfully, store the tab ID
-      if (result.action === 'entered') {
-        await chrome.storage.local.set({ pipTabId: currentTab.id });
-      } else if (result.action === 'exited') {
-        // If PiP was exited, remove the stored tab ID
-        await chrome.storage.local.remove('pipTabId');
-      }
-
-      // Success message
-      if (statusMessage) {
-        const actionText = result.action === 'entered' ? 'entered' : 'exited';
-        concludeStatus(
-          `Picture-in-Picture ${actionText} successfully.`,
-          'success',
-          2000,
-          statusMessage,
-        );
-      }
-
-      // Close the popup
-      closeCurrentSurface();
-    } catch (injectError) {
-      console.error('[popup] Error injecting PiP script:', injectError);
-      if (statusMessage) {
-        concludeStatus(
-          'Unable to trigger Picture-in-Picture. Make sure the page has loaded.',
-          'error',
-          3000,
-          statusMessage,
-        );
-      }
-    }
-  } catch (error) {
-    console.error('[popup] Error triggering Picture-in-Picture:', error);
-    if (statusMessage) {
-      concludeStatus(
-        'Unable to trigger Picture-in-Picture.',
         'error',
         3000,
         statusMessage,

@@ -68,8 +68,6 @@ Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.n
 
 ### ✨ Content Enhancement
 
-- **Video Controller:** Enhanced video playback controls with keyboard shortcuts and per-site auto fullscreen rules
-- **Picture-in-Picture:** Quick PiP mode for any video on the page
 - **Bright Mode:** Force light/bright mode on any website (override dark themes)
 - **Dark Mode:** Force dark mode rendering on websites when needed
 - **Element Blocker:** Visual element picker to permanently hide distracting page elements (instant apply—no refresh needed)

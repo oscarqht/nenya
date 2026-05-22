@@ -54,8 +54,6 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
 • Save clipboard URLs directly to Raindrop Unsorted
 
 ✨ Content Enhancement
-• Video Controller: Enhanced playback controls with keyboard shortcuts
-• Picture-in-Picture: Quick PiP mode for any video
 • Bright Mode: Force light mode on any website
 • Dark Mode: Force dark mode rendering on websites when needed
 • Element Blocker: Visual picker to hide distracting elements (instant apply)

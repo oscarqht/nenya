@@ -60,12 +60,6 @@ const AVAILABLE_SHORTCUTS = [
     tooltip: 'Inject js/css into this page',
     key: 'j',
   },
-  {
-    id: 'pictureInPicture',
-    emoji: '🖼️',
-    tooltip: 'Picture in Picture',
-    key: 'p',
-  },
   { id: 'takeScreenshot', emoji: '📸', tooltip: 'Take screenshot', key: 'k' },
   { id: 'screenRecording', emoji: '⏺️', tooltip: 'Screen recording', key: 's' },
   { id: 'emojiPicker', emoji: '😀', tooltip: 'Emoji Picker', key: 'g' },

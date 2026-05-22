@@ -59,7 +59,6 @@ export const NENYA_MENU_IDS = {
   EMOJI_PICKER: 'nenya-emoji-picker',
   TAKE_SCREENSHOT: 'nenya-take-screenshot',
   SCREEN_RECORDING: 'nenya-screen-recording',
-  PIP: 'nenya-pip',
   CUSTOM_FILTER: 'nenya-custom-filter',
   AUTO_RELOAD: 'nenya-auto-reload',
   DOWNLOAD_MARKDOWN: 'nenya-download-markdown',
@@ -312,13 +311,6 @@ async function createRootMenus() {
     id: NENYA_MENU_IDS.SCREEN_RECORDING,
     parentId: NENYA_MENU_IDS.TOOLS_PARENT,
     title: '⏺️ Screen recording',
-    contexts: contexts,
-  });
-
-  await createMenuItem({
-    id: NENYA_MENU_IDS.PIP,
-    parentId: NENYA_MENU_IDS.TOOLS_PARENT,
-    title: '🖼️ Picture in Picture',
     contexts: contexts,
   });
 
