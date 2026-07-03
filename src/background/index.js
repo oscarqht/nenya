@@ -113,6 +113,110 @@ const SESSION_EXPORT_ALARM_NAME = 'nenya-session-export';
  */
 
 /**
+ * Build a user-authored JavaScript payload that catches runtime errors while
+ * preserving support for await in snippets.
+ * @param {string} code
+ * @param {string} consoleLabel
+ * @param {string} sourceName
+ * @returns {string}
+ */
+function buildUserScriptCode(code, consoleLabel, sourceName) {
+  return [
+    '(async function() {',
+    '  try {',
+    code,
+    '  } catch (error) {',
+    `    console.error(${JSON.stringify(consoleLabel)}, error);`,
+    '  }',
+    '})();',
+    `//# sourceURL=${sourceName}`,
+  ].join('\n');
+}
+
+/**
+ * Keep sourceURL names readable without allowing storage values to break the
+ * generated comment.
+ * @param {string} value
+ * @returns {string}
+ */
+function sanitizeSourceName(value) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '-');
+}
+
+/**
+ * Execute manually triggered user-authored JavaScript in a CSP-exempt user
+ * script world.
+ * @param {number} tabId
+ * @param {string} code
+ * @param {string} consoleLabel
+ * @param {string} sourceName
+ * @returns {Promise<void>}
+ */
+async function executeManualUserCode(tabId, code, consoleLabel, sourceName) {
+  const userScripts = chrome.userScripts;
+  const setupMessage =
+    'Nenya Run Code requires Chrome user scripts to be enabled. ' +
+    `Open chrome://extensions/?id=${chrome.runtime.id}, enable ` +
+    '"Allow User Scripts" on Chrome 138+, or enable Developer Mode on older Chrome. ' +
+    'Immediate Run Code also requires Chrome 135 or newer.';
+
+  if (!userScripts || typeof userScripts.execute !== 'function') {
+    throw new Error(setupMessage);
+  }
+
+  try {
+    await userScripts.execute({
+      target: { tabId },
+      world: 'USER_SCRIPT',
+      injectImmediately: true,
+      js: [
+        {
+          code: buildUserScriptCode(code, consoleLabel, sourceName),
+        },
+      ],
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${setupMessage} Original error: ${detail}`);
+  }
+}
+
+/**
+ * Execute automatically matched custom JavaScript rules in the legacy page
+ * context. This preserves existing behavior: page CSP can block these rules,
+ * but a stored rule cannot suddenly start running during load on CSP-heavy apps.
+ * @param {number} tabId
+ * @param {string} code
+ * @param {string} consoleLabel
+ * @returns {Promise<void>}
+ */
+async function executeAutomaticCustomCode(tabId, code, consoleLabel) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (jsCode, label) => {
+      try {
+        (0, eval)(jsCode);
+        return { success: true };
+      } catch (error) {
+        console.error(label, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+    args: [code, consoleLabel],
+  });
+  const failedResult = results.find((result) => {
+    return result.result && result.result.success === false;
+  });
+  if (failedResult?.result?.error) {
+    throw new Error(failedResult.result.error);
+  }
+}
+
+/**
  * Create a tab immediately to the right of the active tab in the last focused window.
  * If the active tab is in a group, the new tab is moved into that same group.
  * @param {{url?: string, pinned?: boolean, active?: boolean}} tabCreateProperties
@@ -3391,25 +3495,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     void (async () => {
       try {
-        // Inject the custom JavaScript code into the MAIN world
-        // This bypasses the page's CSP restrictions
-        await chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          world: 'MAIN',
-          func: (jsCode) => {
-            // Execute the code in the page context
-            try {
-              // Use indirect eval to execute in global scope
-              (0, eval)(jsCode);
-            } catch (error) {
-              console.error(
-                '[Nenya CustomCode] Script execution error:',
-                error,
-              );
-            }
-          },
-          args: [code],
-        });
+        await executeAutomaticCustomCode(
+          tabId,
+          code,
+          '[Nenya CustomCode] Script execution error:',
+        );
 
         sendResponse({ success: true });
       } catch (error) {
@@ -3994,22 +4084,14 @@ async function handleRunCodeFromContextMenu(ruleId, tab) {
       return;
     }
 
-    // Inject code if present (using MAIN world to bypass CSP)
+    // Inject code if present.
     if (rule.code && rule.code.trim()) {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world: 'MAIN',
-        func: (jsCode) => {
-          try {
-            // Wrap code in async IIFE to prevent global pollution and support await
-            const wrappedCode = `(async function() {\n${jsCode}\n})();`;
-            (0, eval)(wrappedCode);
-          } catch (error) {
-            console.error('[Nenya RunCode] Script execution error:', error);
-          }
-        },
-        args: [rule.code],
-      });
+      await executeManualUserCode(
+        tab.id,
+        rule.code,
+        '[Nenya RunCode] Script execution error:',
+        sanitizeSourceName(`nenya-run-code-${ruleId}.js`),
+      );
     }
   } catch (error) {
     console.error('[contextMenu] Failed to run code:', error);

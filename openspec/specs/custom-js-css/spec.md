@@ -1,6 +1,8 @@
-## Custom JS & CSS Specification
+## Purpose
 
 `src/options/customCode.js`, `src/options/index.html`, `src/popup/popup.js`, `src/contentScript/custom-js-css.js`, `src/background/index.js`, `src/options/importExport.js`, and `src/background/automerge-options-sync.js` collectively implement the “Custom JS & CSS” capability: users create URL-patterned rules that inject CSS and JavaScript into matching pages, manage those rules from the Options UI or popup shortcuts, and keep them portable through the Raindrop backup plus Automerge sync flows.
+
+## Requirements
 
 ### Requirement: The options UI SHALL load and sanitize locally stored custom code rules
 
@@ -53,7 +55,7 @@
 - **GIVEN** `src/contentScript/custom-js-css.js` runs on every page,
 - **THEN** the `CustomCodeInjector` MUST read the latest rules from `chrome.storage.local`, filter to entries that are not `disabled` and whose `URLPattern` matches `window.location.href`, and for each:
   - inject CSS by replacing/adding a `<style id="nenya-custom-css-<ruleId>" data-nenya-custom>` appended to the end of `<head>` (or `body`/`documentElement` fallback) so it wins cascade priority,
-  - request the background service worker to execute the JavaScript payload in the page’s MAIN world, only once per rule per tab (tracked in `injectedScripts`) to avoid duplicate side effects,
+  - request the background service worker to execute the JavaScript payload in the page context, only once per rule per tab (tracked in `injectedScripts`) to avoid duplicate side effects,
 - **AND** `applyMatchingRules()` MUST keep a set of active rule IDs and remove any now-stale `<style>` elements when a rule stops matching, while acknowledging that previously executed JS cannot be rolled back (disabling the rule only prevents future injections).
 
 #### Scenario: Reapply injections when configuration changes
@@ -65,7 +67,8 @@
 
 #### Scenario: Execute JS on behalf of the content script
 - **GIVEN** the content script requests `{ type: 'INJECT_CUSTOM_JS', ruleId, code }`,
-- **THEN** the background service worker MUST verify `sender.tab.id` exists and `code` is non-empty, call `chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: (js) => (0, eval)(js), args: [code] })`, and reply `{ success: true }`,
+- **THEN** the background service worker MUST verify `sender.tab.id` exists and `code` is non-empty, call `chrome.scripting.executeScript()` with the MAIN-world eval path, and reply `{ success: true }`,
+- **AND** host-page CSP MAY block this automatic custom-code path on pages that disallow eval, so stored rules do not gain new page-load execution privileges unexpectedly,
 - **AND** errors (invalid tab, injection failure, runtime exceptions) MUST be caught and responded to with `{ success: false, error }` so the caller can log and avoid retry storms.
 
 ### Requirement: Backups and sync SHALL propagate custom code rules across devices even though they live in local storage
@@ -78,5 +81,3 @@
 #### Scenario: Keep Automerge sync aware of local-only rules
 - **GIVEN** Automerge sync is preparing the CRDT document for Raindrop,
 - **THEN** `ensureLocalStorageInDoc()` MUST read `chrome.storage.local.customCodeRules`, detect divergence from the document’s `doc.customCodeRules`, and copy the JSON data into the Automerge change so remote merges, backups, and other browsers receive the latest rules even though they originate in local storage.
-
-

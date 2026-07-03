@@ -142,8 +142,7 @@
       }
 
       try {
-        // Request background script to inject code in MAIN world
-        // This bypasses page CSP restrictions
+        // Request the background script to inject code in the page context.
         const response = await chrome.runtime.sendMessage({
           type: 'INJECT_CUSTOM_JS',
           ruleId: ruleId,
@@ -254,4 +253,3 @@
     new CustomCodeInjector();
   }
 })();
-
