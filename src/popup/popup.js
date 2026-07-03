@@ -14,6 +14,7 @@ import {
 import { concludeStatus } from './shared.js';
 
 import { debounce } from '../shared/debounce.js';
+import { getMatchingCodeRules } from '../shared/contextMenus.js';
 
 /**
  * Close the current UI surface only when running as popup.
@@ -275,6 +276,8 @@ const SHORTCUT_CONFIG = {
 const STORAGE_KEY = 'pinnedShortcuts';
 const PINNED_SEARCH_RESULTS_STORAGE_KEY = 'pinnedSearchResults';
 const SEARCH_RESULT_WEIGHTS_KEY = 'searchResultWeights';
+const RUN_CODE_IN_PAGE_RULES_STORAGE_KEY = 'runCodeInPageRules';
+const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
 
 /** @type {string[]} Default pinned shortcuts */
 const DEFAULT_PINNED_SHORTCUTS = [
@@ -344,6 +347,12 @@ const statusMessage = /** @type {HTMLDivElement | null} */ (
 );
 const autoReloadStatusElement = /** @type {HTMLSpanElement | null} */ (
   document.getElementById('autoReloadStatus')
+);
+const runCodeSection = /** @type {HTMLElement | null} */ (
+  document.getElementById('runCodeSection')
+);
+const runCodeList = /** @type {HTMLDivElement | null} */ (
+  document.getElementById('runCodeList')
 );
 
 const bookmarksSearchInput = /** @type {HTMLInputElement | null} */ (
@@ -553,6 +562,7 @@ if (!statusMessage) {
 
 // Initialize shortcuts on page load
 void loadAndRenderShortcuts();
+void refreshMatchingRunCodeSection();
 
 // Listen for storage changes to update UI dynamically
 if (chrome?.storage?.onChanged) {
@@ -563,6 +573,9 @@ if (chrome?.storage?.onChanged) {
       }
       if (changes[PINNED_SEARCH_RESULTS_STORAGE_KEY]) {
         void renderPinnedItems();
+      }
+      if (changes[RUN_CODE_IN_PAGE_RULES_STORAGE_KEY]) {
+        void refreshMatchingRunCodeSection();
       }
     }
   });
@@ -916,6 +929,148 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+/**
+ * Show or hide the popup Run Code section.
+ * @param {boolean} hidden
+ * @returns {void}
+ */
+function setRunCodeSectionHidden(hidden) {
+  if (!runCodeSection || !runCodeList) {
+    return;
+  }
+  runCodeSection.classList.toggle('hidden', hidden);
+  if (hidden) {
+    runCodeList.textContent = '';
+  }
+}
+
+/**
+ * Resolve a readable label for a run-code rule.
+ * @param {{title?: string, patterns?: string[]}} rule
+ * @returns {string}
+ */
+function getRunCodeRuleTitle(rule) {
+  const title = typeof rule.title === 'string' ? rule.title.trim() : '';
+  if (title) {
+    return title;
+  }
+  if (Array.isArray(rule.patterns) && rule.patterns[0]) {
+    return rule.patterns[0];
+  }
+  return 'Untitled script';
+}
+
+/**
+ * Read the active tab targeted by the popup.
+ * @returns {Promise<chrome.tabs.Tab | null>}
+ */
+async function getActivePopupTab() {
+  const tabs = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+  });
+  return tabs?.[0] || null;
+}
+
+/**
+ * Execute a stored Run Code rule in the active tab.
+ * @param {{id: string, title?: string}} rule
+ * @param {HTMLButtonElement} button
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+async function runCodeInPage(rule, button, tabId) {
+  const originalMarkup = button.innerHTML;
+  button.disabled = true;
+  button.classList.add('loading');
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: RUN_CODE_IN_PAGE_EXECUTE_MESSAGE,
+      ruleId: rule.id,
+      tabId,
+    });
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Failed to run code.');
+    }
+    button.textContent = 'Ran';
+    if (statusMessage) {
+      concludeStatus(
+        `Ran "${getRunCodeRuleTitle(rule)}"`,
+        'success',
+        2500,
+        statusMessage,
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn('[popup] Run code failed:', error);
+    button.textContent = 'Failed';
+    if (statusMessage) {
+      concludeStatus(message, 'error', 4000, statusMessage);
+    }
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.classList.remove('loading');
+      button.innerHTML = originalMarkup;
+    }, 1400);
+  }
+}
+
+/**
+ * Render matching Run Code rules for the active tab.
+ * @returns {Promise<void>}
+ */
+async function refreshMatchingRunCodeSection() {
+  if (!runCodeSection || !runCodeList) {
+    return;
+  }
+
+  try {
+    const activeTab = await getActivePopupTab();
+    const url = typeof activeTab?.url === 'string' ? activeTab.url : '';
+    const tabId =
+      activeTab && typeof activeTab.id === 'number' ? activeTab.id : null;
+    if (!url || tabId === null) {
+      setRunCodeSectionHidden(true);
+      return;
+    }
+
+    const matchingRules = await getMatchingCodeRules(url);
+    if (matchingRules.length === 0) {
+      setRunCodeSectionHidden(true);
+      return;
+    }
+
+    runCodeList.textContent = '';
+    matchingRules.forEach((rule) => {
+      if (!rule.id) {
+        return;
+      }
+      const title = getRunCodeRuleTitle(rule);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className =
+        'badge cursor-pointer hover:opacity-80 border-none transition-all duration-200 run-code-item';
+      button.setAttribute('role', 'listitem');
+      button.title = title;
+      button.innerHTML = `
+        <span class="truncate pointer-events-none">${escapeHtml(title)}</span>
+      `;
+      button.addEventListener('click', () => {
+        void runCodeInPage(rule, button, tabId);
+      });
+      runCodeList.appendChild(button);
+    });
+
+    setRunCodeSectionHidden(runCodeList.children.length === 0);
+  } catch (error) {
+    console.warn('[popup] Failed to refresh Run Code section:', error);
+    setRunCodeSectionHidden(true);
+  }
 }
 
 /**

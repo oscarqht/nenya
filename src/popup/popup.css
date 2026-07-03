@@ -36,7 +36,34 @@ body.save-to-unsorted-dialog-open {
   color: #2b211c;
 }
 
+#runCodeSection {
+  border: 1px solid var(--nenya-border-soft);
+  background: var(--color-base-100);
+  backdrop-filter: none;
+}
+
+#runCodeList .run-code-item {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 999px;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 0.08);
+  background: #eee;
+  color: #222;
+  height: auto;
+  min-height: 1.45rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.1;
+}
+
 [data-theme='dark'] #shortcutsContainer .btn {
+  color: #f3ebe7;
+}
+
+[data-theme='dark'] #runCodeList .run-code-item {
+  background: #333;
   color: #f3ebe7;
 }
 

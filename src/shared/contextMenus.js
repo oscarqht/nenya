@@ -460,7 +460,7 @@ function urlMatchesAnyPattern(url, patterns) {
  * @param {string} url - The current page URL
  * @returns {Promise<Array<{id: string, title?: string, patterns: string[], code: string}>>}
  */
-async function getMatchingCodeRules(url) {
+export async function getMatchingCodeRules(url) {
   const rules = await getRunCodeInPageRules();
 
   return rules.filter((rule) => {

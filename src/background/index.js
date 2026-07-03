@@ -97,6 +97,7 @@ const SET_CURRENT_SESSION_ICON_PREFERENCE_MESSAGE =
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
+const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
 const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
 const COLLECT_AND_SEND_TO_LLM_MESSAGE = 'collect-and-send-to-llm';
 const OPEN_LLM_TABS_MESSAGE = 'open-llm-tabs';
@@ -2739,6 +2740,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === RUN_CODE_IN_PAGE_EXECUTE_MESSAGE) {
+    const ruleId = typeof message.ruleId === 'string' ? message.ruleId : '';
+    const tabId = typeof message.tabId === 'number' ? message.tabId : null;
+    void (async () => {
+      try {
+        let targetTabId = tabId;
+        if (targetTabId === null) {
+          const tabs = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          });
+          targetTabId =
+            tabs && typeof tabs[0]?.id === 'number' ? tabs[0].id : null;
+        }
+        if (targetTabId === null) {
+          throw new Error('No active tab found.');
+        }
+        const result = await runCodeInPageRule(ruleId, targetTabId);
+        sendResponse({ ok: true, ...result });
+      } catch (error) {
+        const messageText =
+          error instanceof Error ? error.message : String(error);
+        console.error('[background] Run code failed:', error);
+        sendResponse({ ok: false, error: messageText });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === OPEN_ALL_ITEMS_MESSAGE) {
     const collectionId = Number(message.collectionId);
     const collectionTitle = message.collectionTitle;
@@ -4061,6 +4091,46 @@ async function handleReplaceProjectFromContextMenu(projectId, tab) {
 }
 
 /**
+ * Run a stored "Run code in page" snippet in a tab.
+ * @param {string} ruleId
+ * @param {number} tabId
+ * @returns {Promise<{title: string}>}
+ */
+async function runCodeInPageRule(ruleId, tabId) {
+  if (!ruleId) {
+    throw new Error('Invalid code rule ID.');
+  }
+  if (typeof tabId !== 'number') {
+    throw new Error('No active tab found.');
+  }
+
+  const result = await chrome.storage.local.get('runCodeInPageRules');
+  const rules = Array.isArray(result.runCodeInPageRules)
+    ? result.runCodeInPageRules
+    : [];
+  const rule = rules.find((candidate) => candidate.id === ruleId);
+
+  if (!rule) {
+    throw new Error('Code rule not found.');
+  }
+
+  if (!rule.code || !rule.code.trim()) {
+    throw new Error('Code rule is empty.');
+  }
+
+  await executeManualUserCode(
+    tabId,
+    rule.code,
+    '[Nenya RunCode] Script execution error:',
+    sanitizeSourceName(`nenya-run-code-${ruleId}.js`),
+  );
+
+  return {
+    title: typeof rule.title === 'string' ? rule.title : '',
+  };
+}
+
+/**
  * Handle run code snippet from context menu.
  * @param {string} ruleId
  * @param {chrome.tabs.Tab} [tab]
@@ -4072,27 +4142,7 @@ async function handleRunCodeFromContextMenu(ruleId, tab) {
   }
 
   try {
-    // Load the "run code in page" rules
-    const result = await chrome.storage.local.get('runCodeInPageRules');
-    const rules = Array.isArray(result.runCodeInPageRules)
-      ? result.runCodeInPageRules
-      : [];
-    const rule = rules.find((r) => r.id === ruleId);
-
-    if (!rule) {
-      console.warn('[contextMenu] Code rule not found:', ruleId);
-      return;
-    }
-
-    // Inject code if present.
-    if (rule.code && rule.code.trim()) {
-      await executeManualUserCode(
-        tab.id,
-        rule.code,
-        '[Nenya RunCode] Script execution error:',
-        sanitizeSourceName(`nenya-run-code-${ruleId}.js`),
-      );
-    }
+    await runCodeInPageRule(ruleId, tab.id);
   } catch (error) {
     console.error('[contextMenu] Failed to run code:', error);
   }
