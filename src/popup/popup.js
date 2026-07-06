@@ -983,8 +983,18 @@ async function getActivePopupTab() {
  */
 async function runCodeInPage(rule, button, tabId) {
   const originalMarkup = button.innerHTML;
+  const originalWidth = button.offsetWidth;
+  const title = getRunCodeRuleTitle(rule);
+  const clearRunningState = () => {
+    button.classList.remove('is-running');
+    button.removeAttribute('aria-busy');
+  };
   button.disabled = true;
-  button.classList.add('loading');
+  button.classList.add('is-running');
+  button.style.width = `${originalWidth}px`;
+  button.setAttribute('aria-busy', 'true');
+  button.setAttribute('aria-label', `Running ${title}`);
+  button.innerHTML = '<span class="run-code-spinner" aria-hidden="true"></span>';
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -995,10 +1005,11 @@ async function runCodeInPage(rule, button, tabId) {
     if (!response?.ok) {
       throw new Error(response?.error || 'Failed to run code.');
     }
+    clearRunningState();
     button.textContent = 'Ran';
     if (statusMessage) {
       concludeStatus(
-        `Ran "${getRunCodeRuleTitle(rule)}"`,
+        `Ran "${title}"`,
         'success',
         2500,
         statusMessage,
@@ -1007,6 +1018,7 @@ async function runCodeInPage(rule, button, tabId) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[popup] Run code failed:', error);
+    clearRunningState();
     button.textContent = 'Failed';
     if (statusMessage) {
       concludeStatus(message, 'error', 4000, statusMessage);
@@ -1014,7 +1026,9 @@ async function runCodeInPage(rule, button, tabId) {
   } finally {
     setTimeout(() => {
       button.disabled = false;
-      button.classList.remove('loading');
+      clearRunningState();
+      button.style.width = '';
+      button.setAttribute('aria-label', title);
       button.innerHTML = originalMarkup;
     }, 1400);
   }

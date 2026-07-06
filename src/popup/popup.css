@@ -43,6 +43,7 @@ body.save-to-unsorted-dialog-open {
 }
 
 #runCodeList .run-code-item {
+  --run-code-chip-height: 1.45rem;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -52,10 +53,34 @@ body.save-to-unsorted-dialog-open {
   background: #eee;
   color: #222;
   height: auto;
-  min-height: 1.45rem;
+  min-height: var(--run-code-chip-height);
   padding: 0.2rem 0.6rem;
   font-size: 0.78rem;
   line-height: 1.1;
+}
+
+#runCodeList .run-code-item.is-running {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#runCodeList .run-code-spinner {
+  width: var(--run-code-chip-height);
+  height: var(--run-code-chip-height);
+  flex: 0 0 var(--run-code-chip-height);
+  border: 0.18rem solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  opacity: 0.45;
+  animation: run-code-spinner 0.8s linear infinite;
+}
+
+@keyframes run-code-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 [data-theme='dark'] #shortcutsContainer .btn {
