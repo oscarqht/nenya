@@ -108,6 +108,33 @@ function getPinnedItemIndexFromEvent(event) {
 }
 
 /**
+ * Resolve a visible Run Code item button from Alt+Q/W/E/R/T/Y/U/I/O/P.
+ * @param {KeyboardEvent} event
+ * @returns {HTMLButtonElement | null}
+ */
+function getRunCodeButtonFromEvent(event) {
+  if (
+    !event.altKey ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.isComposing
+  ) {
+    return null;
+  }
+
+  const key = getShortcutKeyFromEvent(event);
+  if (!RUN_CODE_SHORTCUT_KEYS.includes(key)) {
+    return null;
+  }
+
+  const button = runCodeList?.querySelector(
+    `[data-run-code-shortcut="${key}"]`,
+  );
+  return button instanceof HTMLButtonElement ? button : null;
+}
+
+/**
  * Determine whether the popup search field is currently the active element.
  * @returns {boolean}
  */
@@ -138,6 +165,10 @@ function shouldSuppressSearchInputAltShortcut(event) {
   }
 
   if (key >= '1' && key <= '9') {
+    return true;
+  }
+
+  if (getRunCodeButtonFromEvent(event)) {
     return true;
   }
 
@@ -278,6 +309,19 @@ const PINNED_SEARCH_RESULTS_STORAGE_KEY = 'pinnedSearchResults';
 const SEARCH_RESULT_WEIGHTS_KEY = 'searchResultWeights';
 const RUN_CODE_IN_PAGE_RULES_STORAGE_KEY = 'runCodeInPageRules';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
+/** @type {string[]} */
+const RUN_CODE_SHORTCUT_KEYS = [
+  'q',
+  'w',
+  'e',
+  'r',
+  't',
+  'y',
+  'u',
+  'i',
+  'o',
+  'p',
+];
 
 /** @type {string[]} Default pinned shortcuts */
 const DEFAULT_PINNED_SHORTCUTS = [
@@ -1060,24 +1104,36 @@ async function refreshMatchingRunCodeSection() {
     }
 
     runCodeList.textContent = '';
+    let renderedRunCodeItemCount = 0;
     matchingRules.forEach((rule) => {
       if (!rule.id) {
         return;
       }
       const title = getRunCodeRuleTitle(rule);
+      const shortcutKey =
+        RUN_CODE_SHORTCUT_KEYS[renderedRunCodeItemCount] || '';
       const button = document.createElement('button');
       button.type = 'button';
       button.className =
         'badge cursor-pointer hover:opacity-80 border-none transition-all duration-200 run-code-item';
       button.setAttribute('role', 'listitem');
       button.title = title;
+      if (shortcutKey) {
+        button.dataset.runCodeShortcut = shortcutKey;
+      }
       button.innerHTML = `
+        ${
+          shortcutKey
+            ? `<span class="run-code-shortcut-key pointer-events-none">${shortcutKey}</span>`
+            : ''
+        }
         <span class="truncate pointer-events-none">${escapeHtml(title)}</span>
       `;
       button.addEventListener('click', () => {
         void runCodeInPage(rule, button, tabId);
       });
       runCodeList.appendChild(button);
+      renderedRunCodeItemCount += 1;
     });
 
     setRunCodeSectionHidden(runCodeList.children.length === 0);
@@ -3955,6 +4011,14 @@ async function initializeBookmarksSearch(
         const item = pinnedItems[pinnedItemIndex];
         void openBookmark(item.url);
       }
+      return;
+    }
+
+    const runCodeButton = getRunCodeButtonFromEvent(event);
+    if (runCodeButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      runCodeButton.click();
       return;
     }
 

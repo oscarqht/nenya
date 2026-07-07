@@ -44,6 +44,9 @@ body.save-to-unsorted-dialog-open {
 
 #runCodeList .run-code-item {
   --run-code-chip-height: 1.45rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -57,6 +60,14 @@ body.save-to-unsorted-dialog-open {
   padding: 0.2rem 0.6rem;
   font-size: 0.78rem;
   line-height: 1.1;
+}
+
+#runCodeList .run-code-shortcut-key {
+  font-weight: 700;
+  font-size: 0.68rem;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.72;
 }
 
 #runCodeList .run-code-item.is-running {
