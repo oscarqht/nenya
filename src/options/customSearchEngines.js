@@ -302,6 +302,6 @@ if (document.readyState === 'loading') {
 }
 
 document.addEventListener(
-  'nenya-options-restored',
+  'nenya-options-imported',
   () => void initCustomSearchEngines(),
 );

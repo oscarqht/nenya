@@ -35,7 +35,7 @@ Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.n
   - Encrypt & Save to Raindrop Unsorted via password-protected links
   - Mirror Raindrop collections as browser bookmarks
   - Automatic background synchronization
-- **Backup & Restore:** Export and import all your extension settings with conflict-free (Automerge) sync across browsers
+- **JSON Import/Export:** Export and import extension settings as local JSON files
 
 ### 🖥️ Advanced Tab Features
 

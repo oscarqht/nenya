@@ -17,7 +17,7 @@ The options experience exposes provider choices (currently Raindrop.io) and driv
 #### Scenario: Handle OAuth success callbacks
 - **GIVEN** the OAuth helper finishes and posts an `oauth_success` message to the extension (via `chrome.runtime.onMessageExternal`, limited to `https://ohauth.vercel.app/*` by `externally_connectable`),
 - **THEN** the extension MUST persist the received access token, refresh token, and calculated `expiresAt` inside `chrome.storage.sync` under `cloudAuthTokens[providerId]`,
-- **AND** show a success toast, mark the backup module as connected, trigger `OPTIONS_BACKUP_MESSAGES.RESTORE_AFTER_LOGIN`, refresh the backup status UI, and immediately dispatch a `mirror:pull` runtime message to begin mirroring.
+- **AND** show a success toast and initialize the provider-backed features that require Raindrop access.
 
 ### Requirement: Connection state MUST gate mirror controls, notification sections, and UI affordances
 Interface elements that rely on a logged-in provider MUST stay hidden or disabled until valid tokens exist.
@@ -26,7 +26,7 @@ Interface elements that rely on a logged-in provider MUST stay hidden or disable
 - **GIVEN** valid (non-expired) tokens are present for the selected provider,
 - **THEN** the status line MUST render in the success style with the formatted expiration timestamp,
 - **AND** the Connect button label MUST switch to 'Reconnect', the Disconnect/Pull/Reset buttons MUST become visible and enabled, and the root-folder configuration section MUST populate with bookmark folders so users can move/rename the mirror root,
-- **AND** `updateNotificationSectionsVisibility(true)` MUST run so notification toggles, options backup states, and the sidebar remain visible.
+- **AND** the sidebar MUST remain visible so connected-only options are accessible.
 
 #### Scenario: Logged-out or expired state
 - **GIVEN** no tokens exist or they are expired,
@@ -49,4 +49,4 @@ Disconnecting from a provider must revoke local access to cloud bookmarks and wi
 
 #### Scenario: Logout resets tokens and local caches
 - **GIVEN** the user presses the Logout button,
-- **THEN** the extension MUST remove the provider entry from `cloudAuthTokens`, reset the mirror state (removing the mirror root folder + timestamps), clear all saved project data, mark the backup module as disconnected, refresh backup status indicators, re-render provider UI into the logged-out state, and show an informational toast confirming all local data was cleared.
+- **THEN** the extension MUST remove the provider entry from `cloudAuthTokens`, re-render provider UI into the logged-out state, and show an informational toast confirming the disconnect.

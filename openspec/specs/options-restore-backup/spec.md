@@ -1,167 +1,41 @@
-# Options Restore & Backup Specification
+# Options Import/Export Specification
 
 ## Purpose
-Document how the Raindrop-based options backup and restore system behaves today so UI and background workflows stay aligned with the existing functionality.
+Document the supported options portability flow. Options are exported and imported as local JSON files; Raindrop-based backup and restore are not supported.
+
 ## Requirements
-### Requirement: Options UI MUST expose manual Raindrop backup controls with live status
-The options page SHALL present Backup/Restore alongside Import/Export via a floating bar and reflect the latest manual backup/restore status; the popup MAY trigger the same flow while the options page stays in sync.
+### Requirement: Options UI MUST expose JSON import and export controls
+The options page SHALL present Export and Import actions in the floating options bar without Raindrop backup or restore controls.
 
-#### Scenario: Status snapshot and action gating
-- **WHEN** the options page or popup loads
-- **THEN** it SHALL fetch `{ lastBackupAt, lastRestoreAt, lastError }` and render timestamps or “Never”
-- **AND** Backup/Restore SHALL disable while a request is running or when the user is not connected
-- **AND** after any manual action completes, the UI SHALL refresh status and display a success or error toast.
+#### Scenario: Options floating bar shows JSON actions only
+- **WHEN** the options page loads
+- **THEN** the floating bar SHALL contain Export and Import controls
+- **AND** it SHALL NOT contain Backup, Restore, Raindrop backup status, or Raindrop backup action gating.
 
-### Requirement: Backup payloads MUST cover every configurable category with normalized data and metadata
+### Requirement: JSON export MUST serialize supported configurable categories
+Exports SHALL create a versioned JSON file containing the supported options categories.
 
-Each payload MUST be versioned JSON that contains metadata plus a sanitized copy of local settings, guaranteeing that restores are deterministic.
+#### Scenario: Export options to JSON
+- **WHEN** the user clicks Export
+- **THEN** the extension SHALL download a `nenya-options-YYYYMMDD-HHmm.json` file
+- **AND** the payload SHALL include normalized values for auto reload rules, custom code rules, run-code-in-page rules, auto Google login rules, pinned shortcuts, pinned search results, and custom search engines.
 
-#### Scenario: Category inventory and sanitation
+### Requirement: JSON import MUST apply supported configurable categories
+Imports SHALL read a local JSON export file and write normalized settings back to local storage.
 
-- **GIVEN** backups run, **THEN** the system MUST capture the following categories using their build/parse/apply helpers: root folder + provider linkage (`mirrorRootFolderSettings`), notification preferences, auto reload rules (identifiers generated when missing, minimum 5 s interval, sanitized URL patterns), dark mode rules, bright mode whitelist, highlight text rules (type limited to `whole-phrase|comma-separated|regex` with valid colors/patterns), block element rules (URLPattern validation and selector arrays), custom code rules (stored from `chrome.storage.local`, invalid patterns still persisted but noted), LLM prompts, URL process rules, auto Google login rules, pinned shortcuts (limited to six whitelisted shortcut ids), screenshot settings (auto-save boolean flag), **and title transform rules (URL patterns and transform operations)**.
-- **AND** every `apply*` function MUST normalize incoming payloads, write them back through `chrome.storage` with `suppressBackup` to avoid echo loops, and run any needed follow-up (e.g., re-evaluating auto reload rules).
+#### Scenario: Import options from JSON
+- **WHEN** the user selects a valid Nenya JSON export file
+- **THEN** the extension SHALL normalize and store the supported option categories
+- **AND** dispatch `nenya-options-imported` so visible option panels can refresh immediately.
 
-### Requirement: Screenshot Settings Category Registration
+#### Scenario: Reject invalid import files
+- **WHEN** the selected file is not valid JSON or has an unsupported provider
+- **THEN** the extension SHALL leave existing settings unchanged
+- **AND** show an import failure toast.
 
-The backup system MUST register screenshot settings as a backup category.
+### Requirement: Raindrop options backup and restore MUST be absent
+The extension SHALL NOT provide Raindrop-based backup or restore for extension options.
 
-#### Scenario: Register screenshot settings category
-
-- **GIVEN** the backup system initializes
-- **WHEN** registering backup categories
-- **THEN** a `'screenshot-settings'` category MUST be added to `BACKUP_CATEGORIES`
-- **AND** the category MUST have:
-  - `title: 'screenshot-settings'`
-  - `link: 'https://nenya.local/options/screenshot'`
-  - `buildPayload: buildScreenshotSettingsPayload`
-  - `parseItem: parseScreenshotSettingsItem`
-  - `applyPayload: applyScreenshotSettings`
-- **AND** the category MUST be included in full backups
-- **AND** the category MUST support incremental backups on storage changes
-
-### Requirement: Screenshot Settings Import/Export
-
-The JSON import/export functionality MUST include screenshot settings.
-
-#### Scenario: Export screenshot settings to JSON
-
-- **GIVEN** the user exports options to JSON
-- **WHEN** building the export payload
-- **THEN** the export MUST include a `screenshotSettings` field
-- **AND** the field MUST contain the normalized settings: `{ autoSave: boolean }`
-- **AND** the field MUST be included even if using default values
-
-#### Scenario: Import screenshot settings from JSON
-
-- **GIVEN** the user imports options from JSON
-- **WHEN** the JSON contains a `screenshotSettings` field
-- **THEN** the import MUST read and normalize the settings
-- **AND** ensure `autoSave` is a boolean (default to `false` if missing/invalid)
-- **AND** write the normalized settings to `chrome.storage.sync.screenshotSettings`
-- **AND** the options page UI MUST reflect the imported settings immediately
-
-#### Scenario: Handle missing screenshot settings in import
-
-- **GIVEN** the user imports options from JSON
-- **WHEN** the JSON does NOT contain a `screenshotSettings` field
-- **THEN** the import MUST NOT modify existing screenshot settings
-- **AND** existing settings MUST be preserved unchanged
-- **AND** no error or warning MUST be shown
-
-### Requirement: Options data MUST be persisted in local storage only
-
-All option categories SHALL be stored in `chrome.storage.local` instead of `chrome.storage.sync`, including root folder settings, notification preferences, auto reload rules, dark mode rules, bright mode whitelist/settings, highlight text rules, video enhancement rules, block element rules, custom code rules, LLM prompts, URL process rules, auto Google login rules, screenshot settings, **title transform rules**, and pinned shortcuts.
-
-#### Scenario: Option writes use local storage
-
-- **WHEN** any option category is saved by the UI or background helpers
-- **THEN** the values SHALL be written to `chrome.storage.local` under their respective keys
-- **AND** no writes to `chrome.storage.sync` SHALL occur for these categories.
-
-#### Scenario: Manual backup reads from the local copy
-
-- **WHEN** a manual backup or restore runs
-- **THEN** it SHALL read from `chrome.storage.local` for every option category listed above to assemble or apply the payload.
-
-### Requirement: Manual Raindrop backup and restore MUST use chunked plain JSON with batch requests
-Manual backup/restore SHALL operate on a plain JSON payload, split into deterministic chunks of at most 1000 characters, and use Raindrop batch get/set APIs to save or fetch all chunks in a single request.
-
-#### Scenario: Manual backup stores chunked JSON via batch set
-- **WHEN** the user triggers Backup from the options floating bar or the popup
-- **THEN** the system SHALL build a JSON payload from local options, stringify it, split it into ordered chunks each ≤1000 characters, and issue one Raindrop batch set request to overwrite the remote copy (creating/updating all chunk items)
-- **AND** on success it SHALL record `lastBackupAt`; on failure it SHALL return an error without reporting success.
-
-#### Scenario: Manual restore fetches chunked JSON via batch get
-- **WHEN** the user triggers Restore from the options floating bar or the popup
-- **THEN** the system SHALL issue one Raindrop batch get request to fetch all backup chunks, sort them deterministically, concatenate and parse the JSON, and apply it to local options
-- **AND** if any chunk is missing, out-of-order, or the JSON fails to parse, the restore SHALL fail and surface an error instead of applying partial data.
-
-### Requirement: Automatic sync MUST be disabled in favor of explicit user triggers
-The system SHALL never initiate Raindrop backup/restore automatically; only explicit user actions may trigger network sync.
-
-#### Scenario: No background sync without explicit action
-- **WHEN** the extension starts, storage changes occur, alarms fire, or a window gains focus
-- **THEN** no Raindrop backup/restore SHALL be initiated automatically
-- **AND** no Automerge/CRDT merge paths or backup alarms SHALL run.
-
-### Requirement: Backup controls MUST be reachable from options floating bar and popup
-Users SHALL be able to access Backup/Restore (and import/export) from both the options page and the popup, sharing the same manual flow.
-
-#### Scenario: Options floating bar is visible across sections
-- **WHEN** a user views any options section
-- **THEN** a floating bottom-right bar SHALL stay visible containing Backup, Restore, Export JSON, and Import JSON actions
-- **AND** these controls SHALL disable while an action is running and when the user is not connected.
-
-#### Scenario: Popup backup/restore actions
-- **WHEN** the popup opens while the user is logged in
-- **THEN** Backup and Restore buttons SHALL be present, call the same manual background flow, and show success or error feedback
-- **AND** when logged out the buttons SHALL be disabled or prompt the user to connect.
-
-### Requirement: Backup payload MUST cover all configurable categories in plain JSON
-
-Manual backups SHALL serialize all configurable options into a plain JSON payload that can be restored without CRDT metadata.
-
-#### Scenario: Backup includes normalized categories without Automerge metadata
-
-- **WHEN** a manual backup builds its payload
-- **THEN** it SHALL include normalized values for `mirrorRootFolderSettings`, `notificationPreferences`, `autoReloadRules`, `darkModeRules`, `brightModeWhitelist`/`brightModeSettings`, `highlightTextRules`, `blockElementRules`, `customCodeRules`, `llmPrompts`, `urlProcessRules`, `autoGoogleLoginRules`, `screenshotSettings`, `titleTransformRules`, `pinnedShortcuts`, **and `customSearchEngines`**
-- **AND** the payload SHALL omit Automerge metadata and SHALL store only plain JSON fields
-- **AND** restore SHALL overwrite the corresponding local keys, applying defaults when fields are missing.
-
-### Requirement: Manual restore MUST overwrite local options with the remote backup
-Manual restores SHALL apply the remote backup as the single source of truth, replacing existing local values rather than merging.
-
-#### Scenario: Restore overwrites instead of merging
-- **WHEN** a manual restore succeeds
-- **THEN** the parsed backup values SHALL replace the existing local option values for each category, disregarding uncommitted local edits
-- **AND** if the chunk set is incomplete or invalid, the restore SHALL abort and leave local values unchanged.
-
-### Requirement: Title Transform Rules Import/Export
-
-The JSON import/export functionality MUST include title transform rules.
-
-#### Scenario: Export title transform rules to JSON
-
-- **GIVEN** the user exports options to JSON
-- **WHEN** building the export payload
-- **THEN** the export MUST include a `titleTransformRules` field
-- **AND** the field MUST contain an array of normalized title transform rule objects
-- **AND** the field MUST be included even if the array is empty
-
-#### Scenario: Import title transform rules from JSON
-
-- **GIVEN** the user imports options from JSON
-- **WHEN** the JSON contains a `titleTransformRules` field
-- **THEN** the import MUST read and normalize the rules
-- **AND** validate URL patterns and transform operations
-- **AND** write the normalized rules to `chrome.storage.local.titleTransformRules`
-- **AND** the options page UI MUST reflect the imported rules immediately
-
-#### Scenario: Handle missing title transform rules in import
-
-- **GIVEN** the user imports options from JSON
-- **WHEN** the JSON does NOT contain a `titleTransformRules` field
-- **THEN** the import MUST NOT modify existing title transform rules
-- **AND** existing rules MUST be preserved unchanged
-- **AND** no error or warning MUST be shown
-
+#### Scenario: No Raindrop option backup runtime path
+- **WHEN** the service worker starts, handles alarms, or receives runtime messages
+- **THEN** it SHALL NOT initialize an options backup service, schedule an options backup alarm, upload options to Raindrop, or restore options from Raindrop.

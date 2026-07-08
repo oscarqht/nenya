@@ -26,7 +26,7 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
 ✓ Encrypt & save to Raindrop Unsorted with password-protected links
 ✓ Mirror Raindrop collections as bookmarks
 ✓ Automatic background synchronization
-• Backup & restore all extension settings with conflict-free Automerge sync
+• Export and import extension settings as local JSON files
 
 🖥️ Advanced Tab Features
 • Auto Reload: Automatically reload pages based on URL patterns
@@ -89,7 +89,7 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
   Used in conjunction with tab management to organize related tabs into groups for user workflows such as context-menu actions and split-tab operations.
 
 - **notifications**:
-  Provides user feedback for important actions like successful Raindrop synchronization, backup completion, auto-reload events, auto-login notifications, and error states. Keeps users informed about background operations without interrupting their browsing.
+  Provides user feedback for important actions like successful Raindrop synchronization, JSON import/export completion, auto-reload events, auto-login notifications, and error states. Keeps users informed about background operations without interrupting their browsing.
 
 - **contextMenus**:
   Adds right-click menu options for quick access to extension features including clipboard tools (copy title/URL, screenshots) and Raindrop save actions. Provides convenient access to frequently used features.

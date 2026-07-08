@@ -62,10 +62,10 @@
 
 #### Scenario: Include block element rules in options export/import flows
 
-- **GIVEN** the user exports settings from the Options “Backups” section or Automerge sync pulls from Raindrop,
+- **GIVEN** the user exports or imports settings through the Options JSON import/export flow,
 - **THEN** `readCurrentOptions()` MUST call `normalizeBlockElementRules()` so only valid `{ id, urlPattern, selectors[], createdAt?, updatedAt? }` entries land in the JSON payload,
 - **AND** `applyImportedOptions()` MUST re-run the same normalization, write the sanitized array back to `chrome.storage.sync.blockElementRules`, and therefore keep rule IDs and timestamps stable across devices,
-- **AND** Automerge sync (`automerge-options-sync.js`) MUST treat `blockElementRules` as a first-class key so CRDT merges propagate new selectors without clobbering other settings.
+- **AND** JSON import/export MUST preserve new selectors without clobbering other settings.
 
 ### Requirement: The content script SHALL hide matching selectors reliably as pages change
 

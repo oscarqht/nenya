@@ -6,24 +6,8 @@ import {
   handleRaindropSearch,
   handleOpenAllItemsInCollection,
   handleUpdateRaindropUrl,
-  ensureNenyaSessionsCollection,
-  handleFetchSessions,
-  handleFetchSessionDetails,
-  handleRestoreSession,
-  ensureDeviceCollectionAndExport,
-  handleSessionExportAlarm,
-  handleUpdateSessionName,
-  handleDeleteSession,
-  handleUploadCollectionCover,
-  handleSetCurrentSessionIconPreference,
 } from './mirror.js';
 
-import {
-  initializeOptionsBackupService,
-  handleOptionsBackupMessage,
-  runAutomaticRestore,
-  runStartupSync,
-} from './options-backup.js';
 import {
   initializeAutoReloadFeature,
   handleAutoReloadAlarm,
@@ -53,7 +37,6 @@ import {
   parseRunCodeMenuItem,
   getCopyFormatType,
 } from '../shared/contextMenus.js';
-import { initializeTabSnapshots } from './tab-snapshots.js';
 import {
   handleScreenRecordingToggle,
   handleActionClickDuringRecording,
@@ -70,18 +53,7 @@ const SHOW_SAVE_TO_UNSORTED_DIALOG_MESSAGE =
   'showSaveToUnsortedDialog';
 const GET_CURRENT_TAB_ID_MESSAGE = 'getCurrentTabId';
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
-const FETCH_SESSIONS_MESSAGE = 'mirror:fetchSessions';
-const FETCH_SESSION_DETAILS_MESSAGE = 'mirror:fetchSessionDetails';
-const RESTORE_SESSION_MESSAGE = 'mirror:restoreSession';
-const RESTORE_WINDOW_MESSAGE = 'mirror:restoreWindow';
-const RESTORE_GROUP_MESSAGE = 'mirror:restoreGroup';
-const RESTORE_TAB_MESSAGE = 'mirror:restoreTab';
 const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
-const SAVE_SESSION_MESSAGE = 'mirror:saveSession';
-const UPDATE_SESSION_NAME_MESSAGE = 'mirror:updateSessionName';
-const DELETE_SESSION_MESSAGE = 'mirror:deleteSession';
-const SET_CURRENT_SESSION_ICON_PREFERENCE_MESSAGE =
-  'mirror:setCurrentSessionIconPreference';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
@@ -89,7 +61,6 @@ const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
 const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
 const ENCRYPT_SERVICE_URL = 'https://oh-auth.vercel.app/secret/encrypt';
 const ENCRYPT_COVER_URL = 'https://picsum.photos/640/360';
-const SESSION_EXPORT_ALARM_NAME = 'nenya-session-export';
 
 /**
  * @typedef {'page-content' | 'html-source'} TabContentMode
@@ -1073,23 +1044,15 @@ async function handleEncryptAndSave(options) {
 }
 /**
  * Handle one-time initialization tasks.
- * @param {string} trigger
  * @returns {void}
  */
-function handleLifecycleEvent(trigger) {
+function handleLifecycleEvent() {
   setupCentralizedContextMenus();
   setupClipboardContextMenus();
-  initializeTabSnapshots();
-  void ensureNenyaSessionsCollection();
-  void initializeOptionsBackupService();
-  void runStartupSync();
-  chrome.alarms.create('options-backup-check', {
-    periodInMinutes: 1,
-  });
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  handleLifecycleEvent('install');
+  handleLifecycleEvent();
 
   // Perform one-time migrations on install or update
   if (details.reason === 'install' || details.reason === 'update') {
@@ -1163,13 +1126,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  handleLifecycleEvent('startup');
+  handleLifecycleEvent();
   void pruneClosedPersistedRenamedTabs();
 });
 
-// Ensure backup and synced session services are initialized immediately when service worker starts
-initializeOptionsBackupService();
-void ensureNenyaSessionsCollection();
 
 void initializeAutoReloadFeature().catch((error) => {
   console.error('[auto-reload] Initialization failed:', error);
@@ -1239,15 +1199,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  void (async () => {
-    if (alarm.name === 'options-backup-check') {
-      await runAutomaticRestore();
-    } else if (alarm.name === SESSION_EXPORT_ALARM_NAME) {
-      await handleSessionExportAlarm();
-    } else {
-      await handleAutoReloadAlarm(alarm);
-    }
-  })();
+  void handleAutoReloadAlarm(alarm);
 });
 
 // ============================================================================
@@ -1492,82 +1444,6 @@ async function handleMarkdownDownload() {
   });
 }
 
-/**
- * Restore a saved session window tree into a new browser window.
- * @param {any[]} tree
- * @returns {Promise<void>}
- */
-async function restoreWindowFromTree(tree) {
-  const tabs = [];
-  (Array.isArray(tree) ? tree : []).forEach((node) => {
-    if (node?.type === 'tab') {
-      tabs.push({ ...node, groupId: -1 });
-    } else if (node?.type === 'group' && Array.isArray(node.tabs)) {
-      node.tabs.forEach((tab) => {
-        tabs.push({ ...tab, groupId: node.id, group: node });
-      });
-    }
-  });
-  tabs.sort((a, b) => (a.index || 0) - (b.index || 0));
-  if (tabs.length === 0) {
-    return;
-  }
-
-  const first = tabs[0];
-  const newWindow = await chrome.windows.create({
-    url: first.url,
-    focused: true,
-  });
-  const windowId = newWindow?.id;
-  const firstTabId = newWindow?.tabs?.[0]?.id;
-  if (typeof windowId !== 'number' || typeof firstTabId !== 'number') {
-    return;
-  }
-
-  if (first.pinned) {
-    await chrome.tabs.update(firstTabId, { pinned: true });
-  }
-
-  const createdTabs = [{ id: firstTabId, oldGroupId: first.groupId, group: first.group }];
-  for (let i = 1; i < tabs.length; i += 1) {
-    const tabInfo = tabs[i];
-    const newTab = await chrome.tabs.create({
-      windowId,
-      url: tabInfo.url,
-      pinned: Boolean(tabInfo.pinned),
-      active: false,
-    });
-    if (typeof newTab?.id === 'number') {
-      createdTabs.push({ id: newTab.id, oldGroupId: tabInfo.groupId, group: tabInfo.group });
-    }
-  }
-
-  const groups = new Map();
-  createdTabs.forEach((tab) => {
-    if (tab.oldGroupId >= 0 && tab.group) {
-      groups.set(tab.oldGroupId, tab.group);
-    }
-  });
-
-  for (const [oldGroupId, group] of groups.entries()) {
-    const tabIds = createdTabs
-      .filter((tab) => tab.oldGroupId === oldGroupId)
-      .map((tab) => tab.id);
-    if (tabIds.length === 0) {
-      continue;
-    }
-    const newGroupId = await chrome.tabs.group({
-      tabIds: /** @type {any} */ (tabIds),
-      createProperties: { windowId },
-    });
-    await chrome.tabGroups.update(newGroupId, {
-      title: group.title || 'Group',
-      color: group.color || 'grey',
-      collapsed: Boolean(group.collapsed),
-    });
-  }
-}
-
 // ============================================================================
 // MESSAGE LISTENER
 // ============================================================================
@@ -1575,10 +1451,6 @@ async function restoreWindowFromTree(tree) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') {
     return false;
-  }
-
-  if (handleOptionsBackupMessage(message, sendResponse)) {
-    return true;
   }
 
   if (handleTokenValidationMessage(message, sendResponse)) {
@@ -1768,215 +1640,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           collections: [],
           error: error instanceof Error ? error.message : 'Raindrop search failed.',
         });
-      });
-    return true;
-  }
-
-  if (message.type === FETCH_SESSIONS_MESSAGE) {
-    handleFetchSessions()
-      .then((sessions) => {
-        sendResponse({ ok: true, sessions });
-      })
-      .catch((error) => {
-        console.error('[background] Fetch sessions failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === FETCH_SESSION_DETAILS_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    handleFetchSessionDetails(collectionId)
-      .then((details) => {
-        sendResponse({ ok: true, details });
-      })
-      .catch((error) => {
-        console.error('[background] Fetch session details failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === RESTORE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    handleRestoreSession(collectionId)
-      .then(() => {
-        sendResponse({ ok: true });
-      })
-      .catch((error) => {
-        console.error('[background] Restore session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === RESTORE_WINDOW_MESSAGE) {
-    void (async () => {
-      try {
-        await restoreWindowFromTree(message.tree);
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore window failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === RESTORE_GROUP_MESSAGE) {
-    void (async () => {
-      try {
-        const group = message.group;
-        const tabs = Array.isArray(group?.tabs) ? group.tabs : [];
-        const currentWindow = await chrome.windows.getCurrent();
-        const windowId = currentWindow.id;
-        if (typeof windowId !== 'number') {
-          throw new Error('Could not get current window');
-        }
-
-        const tabIds = [];
-        for (const tab of tabs) {
-          const newTab = await chrome.tabs.create({
-            windowId,
-            url: tab.url,
-            pinned: Boolean(tab.pinned),
-            active: false,
-          });
-          if (typeof newTab?.id === 'number') {
-            tabIds.push(newTab.id);
-          }
-        }
-
-        if (tabIds.length > 0) {
-          const newGroupId = await chrome.tabs.group({
-            tabIds: /** @type {any} */ (tabIds),
-            createProperties: { windowId },
-          });
-          await chrome.tabGroups.update(newGroupId, {
-            title: group.title || 'Group',
-            color: group.color || 'grey',
-            collapsed: Boolean(group.collapsed),
-          });
-        }
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore group failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === RESTORE_TAB_MESSAGE) {
-    void (async () => {
-      try {
-        const url = typeof message.url === 'string' ? message.url : '';
-        if (!url) {
-          throw new Error('Invalid tab URL');
-        }
-        await createTabNextToActive({
-          url,
-          pinned: Boolean(message.pinned),
-          active: true,
-        });
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore tab failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === SAVE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    void (async () => {
-      try {
-        await ensureDeviceCollectionAndExport(undefined, collectionId);
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Save session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === 'mirror:ensureSessionsCollection') {
-    ensureNenyaSessionsCollection()
-      .then(() => {
-        sendResponse({ ok: true });
-      })
-      .catch((error) => {
-        console.warn('[background] Ensure sessions collection failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === UPDATE_SESSION_NAME_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    const oldName = typeof message.oldName === 'string' ? message.oldName : '';
-    const newName = typeof message.newName === 'string' ? message.newName : '';
-    handleUpdateSessionName(collectionId, oldName, newName)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Update session name failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === DELETE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    handleDeleteSession(collectionId)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Delete session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === 'mirror:uploadCollectionCover') {
-    const collectionId = Number(message.collectionId);
-    const iconPath = typeof message.iconPath === 'string' ? message.iconPath : '';
-    handleUploadCollectionCover(collectionId, iconPath)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Upload collection cover failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === SET_CURRENT_SESSION_ICON_PREFERENCE_MESSAGE) {
-    const iconPath = typeof message.iconPath === 'string' ? message.iconPath : '';
-    handleSetCurrentSessionIconPreference(iconPath)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Persist session icon preference failed:', error);
-        sendResponse({ ok: false, error: error.message });
       });
     return true;
   }

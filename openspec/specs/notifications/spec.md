@@ -1,6 +1,6 @@
 ## Notifications Specification
 
-`src/options/index.html`, `src/options/notifications.js`, `src/options/bookmarks.js`, `src/background/mirror.js`, `src/background/projects.js`, `src/background/clipboard.js`, `src/background/options-backup.js`, and `src/background/automerge-options-sync.js` collectively implement the notifications options capability: users pick which alerts the extension may show, the settings persist across devices, and every background workflow honors the stored preferences.
+`src/options/index.html`, `src/options/notifications.js`, `src/options/bookmarks.js`, `src/background/mirror.js`, `src/background/projects.js`, `src/background/clipboard.js`, `src/options/importExport.js`, and `src/background/automerge-options-sync.js` collectively implement the notifications options capability: users pick which alerts the extension may show, the settings persist across devices, and every background workflow honors the stored preferences.
 
 ### Requirement: The options UI SHALL load, normalize, and persist notification preferences
 
@@ -14,7 +14,7 @@
 - **THEN** the corresponding event listener in `src/options/notifications.js` MUST mutate the matching `preferences` flag, call the relevant handler (for global/bookmark/project/clipboard masters) so cascading disabled states stay accurate, and await `savePreferences()` so the complete `NotificationPreferences` shape is written back to `chrome.storage.sync.notificationPreferences`.
 
 #### Scenario: Reflect imported or remote preference updates
-- **WHEN** `chrome.storage.onChanged` fires for the `notificationPreferences` key in the `sync` area (because Automerge, backup import, or another device wrote new values),
+- **WHEN** `chrome.storage.onChanged` fires for the `notificationPreferences` key in the `sync` area (because import or another device wrote new values),
 - **THEN** both the shared storage-change listener and `subscribeToStorageChanges()` MUST call `normalizePreferences(detail.newValue)`, update the module’s `preferences`, and rerun `applyPreferencesToUI()` so the options UI mirrors the latest remote state without needing a reload.
 
 ### Requirement: Notification toggles SHALL enforce cascading enablement in the UI
@@ -53,11 +53,11 @@
 - **WHEN** the clipboard background module copies titles/URLs or screenshots via context menus or commands,
 - **THEN** it MUST read `getNotificationPreferences()` and only show the success toast if `preferences.enabled`, `preferences.clipboard.enabled`, and `preferences.clipboard.copySuccess` are true, while error notifications (e.g., failed copy or invalid screenshot request) SHALL continue to display regardless so the user still learns about failures.
 
-### Requirement: Notification preferences SHALL remain portable across devices and backups
+### Requirement: Notification preferences SHALL remain portable across devices and JSON import/export
 
-#### Scenario: Include preferences in backup/export/import flows
-- **WHEN** the Options export, scheduled backup, or Raindrop Automerge writer builds payloads,
-- **THEN** `buildNotificationsPayload()` in `options-backup.js` MUST serialize the current `preferences` under the `notification-preferences` kind with metadata, `applyNotificationPreferences()` MUST sanitize incoming payloads via `normalizeNotificationPreferences()` before writing them to `chrome.storage.sync`, and imports must call `suppressBackup('notification-preferences')` to avoid infinite sync loops.
+#### Scenario: Include preferences in export/import flows
+- **WHEN** the Options export/import flow builds payloads,
+- **THEN** `buildNotificationsPayload()` in `importExport.js` MUST serialize the current `preferences` under the `notification-preferences` kind with metadata, `applyNotificationPreferences()` MUST sanitize incoming payloads via `normalizeNotificationPreferences()` before writing them to `chrome.storage.sync`, and imports must write the sanitized preferences without creating recursive updates.
 
 #### Scenario: Automerge sync replicates notification preferences
 - **WHEN** Automerge initializes (`createEmptyAutomergeDoc()`) or observes storage deltas,

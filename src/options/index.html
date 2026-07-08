@@ -471,7 +471,7 @@
       background: color-mix(in oklch, var(--color-base-content) 20%, transparent);
     }
 
-    /* Floating backup bar */
+    /* Floating import/export bar */
     .options-floating-bar {
       position: fixed;
       right: 1rem;
@@ -484,13 +484,6 @@
       border-radius: 1rem;
       padding: 0.75rem;
       width: 140px;
-    }
-
-    .options-floating-status {
-      font-size: 0.6rem;
-      color: color-mix(in oklch, var(--color-base-content) 30%, transparent);
-      margin-bottom: 0.6rem;
-      text-align: center;
     }
 
     .options-floating-actions {
@@ -737,7 +730,7 @@
                 <path d="M12 16v-4" />
                 <path d="M12 8h.01" />
               </svg>
-              <p>Custom code rules are stored locally on this device. They're included in Raindrop backups and exports
+              <p>Custom code rules are stored locally on this device. They're included in JSON exports
                 for syncing across devices.</p>
             </div>
 
@@ -960,15 +953,8 @@
     </form>
   </dialog>
 
-  <div id="optionsBackupFloatingBar" class="options-floating-bar">
-    <div class="options-floating-status" id="optionsBackupFloatingStatus">
-      Manual backup keeps your settings safe in Raindrop. Connect your account to enable backup and restore.
-    </div>
+  <div id="optionsImportExportFloatingBar" class="options-floating-bar">
     <div class="options-floating-actions">
-      <button id="optionsFloatingBackupButton" class="nenya-btn nenya-btn-secondary floating-btn" type="button">⬆️
-        Backup</button>
-      <button id="optionsFloatingRestoreButton" class="nenya-btn nenya-btn-secondary floating-btn" type="button">⬇️
-        Restore</button>
       <button id="optionsFloatingExportButton" class="nenya-btn nenya-btn-ghost floating-btn" type="button">📦
         Export</button>
       <button id="optionsFloatingImportButton" class="nenya-btn nenya-btn-ghost floating-btn" type="button">📁

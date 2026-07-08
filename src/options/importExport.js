@@ -311,7 +311,7 @@ function normalizePreferences(value) {
 }
 
 /**
- * Read current settings used by Options backup.
+ * Read current settings used by options import/export.
  * @returns {Promise<{ autoReloadRules: AutoReloadRuleSettings[], customCodeRules: CustomCodeRuleSettings[], runCodeInPageRules: RunCodeInPageRuleSettings[], autoGoogleLoginRules: AutoGoogleLoginRuleSettings[], pinnedShortcuts: string[], pinnedSearchResults: any[], customSearchEngines: Array<{id: string, name: string, shortcut: string, searchUrl: string}> }>}
  */
 async function readCurrentOptions() {
@@ -531,6 +531,7 @@ async function handleFileChosen() {
       pinnedSearchResults,
       customSearchEngines,
     );
+    document.dispatchEvent(new CustomEvent('nenya-options-imported'));
     showToast('Options imported successfully.', 'success');
   } catch (error) {
     console.warn('[importExport] Import failed:', error);
