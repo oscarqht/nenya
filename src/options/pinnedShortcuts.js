@@ -14,7 +14,7 @@
  * @type {ShortcutButton[]}
  */
 const AVAILABLE_SHORTCUTS = [
-  { id: 'getMarkdown', emoji: '💬', tooltip: 'Chat with llm', key: 'c' },
+  { id: 'getMarkdown', emoji: 'MD', tooltip: 'Download as markdown', key: 'c' },
   { id: 'saveUnsorted', emoji: '📤', tooltip: 'Save to unsorted', key: 'u' },
   {
     id: 'encryptSave',
@@ -35,25 +35,7 @@ const AVAILABLE_SHORTCUTS = [
     key: 'j',
     shift: true,
   },
-  {
-    id: 'customFilter',
-    emoji: '⚡️',
-    tooltip: 'Hide elements in page',
-    key: 'h',
-  },
   { id: 'autoReload', emoji: '🔁', tooltip: 'Auto reload this page', key: 'r' },
-  {
-    id: 'brightMode',
-    emoji: '🔆',
-    tooltip: 'Render this page in bright mode',
-    key: 'b',
-  },
-  {
-    id: 'darkMode',
-    emoji: '🌘',
-    tooltip: 'Render this page in dark mode',
-    key: 'd',
-  },
   {
     id: 'customCode',
     emoji: '📑',
@@ -71,11 +53,10 @@ const MAX_SHORTCUTS = 7;
 
 /** @type {string[]} Default pinned shortcuts */
 const DEFAULT_PINNED_SHORTCUTS = [
-  'getMarkdown', // Chat with llm
+  'getMarkdown', // Download as markdown
   'saveUnsorted', // Save to unsorted
   'encryptSave', // Encrypt & save to unsorted
   'saveClipboardToUnsorted', // Save clipboard link to unsorted
-  'customFilter', // Hide elements in page
   'emojiPicker', // Emoji Picker
 ];
 
@@ -85,7 +66,6 @@ const LEGACY_DEFAULT_PINNED_SHORTCUTS = [
   'saveUnsorted',
   'encryptSave',
   'saveClipboardToUnsorted',
-  'customFilter',
   'openInPopup',
 ];
 

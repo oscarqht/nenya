@@ -5,8 +5,6 @@
  * Handles creation, updates, and dynamic submenus for all context menu items.
  */
 
-import { LLM_PROVIDER_META } from './llmProviders.js';
-
 // ============================================================================
 // CONTEXT MENU ID CONSTANTS
 // ============================================================================
@@ -17,7 +15,6 @@ import { LLM_PROVIDER_META } from './llmProviders.js';
 export const PARENT_MENU_IDS = {
   COPY: 'nenya-copy-parent',
   RAINDROP: 'nenya-raindrop-parent',
-  SEND_TO_LLM: 'nenya-send-to-llm-parent',
   RUN_CODE: 'nenya-run-code-parent',
   // NENYA parent removed as requested
 };
@@ -59,13 +56,8 @@ export const NENYA_MENU_IDS = {
   EMOJI_PICKER: 'nenya-emoji-picker',
   TAKE_SCREENSHOT: 'nenya-take-screenshot',
   SCREEN_RECORDING: 'nenya-screen-recording',
-  CUSTOM_FILTER: 'nenya-custom-filter',
   AUTO_RELOAD: 'nenya-auto-reload',
   DOWNLOAD_MARKDOWN: 'nenya-download-markdown',
-
-  // Appearance
-  BRIGHT_MODE: 'nenya-bright-mode',
-  DARK_MODE: 'nenya-dark-mode',
 
   // Developer
   CUSTOM_CODE_OPTIONS: 'nenya-custom-code-options',
@@ -81,7 +73,6 @@ export const OTHER_MENU_IDS = {
  * Dynamic menu ID prefixes
  */
 export const DYNAMIC_PREFIXES = {
-  LLM_PROVIDER: 'send-to-llm-',
   RUN_CODE: 'run-code-',
 };
 
@@ -242,27 +233,6 @@ async function createRaindropMenu() {
 
 }
 
-/**
- * Create the Send to LLM submenu with all providers.
- * @returns {Promise<void>}
- */
-async function createSendToLLMMenu() {
-  await createMenuItem({
-    id: PARENT_MENU_IDS.SEND_TO_LLM,
-    title: '🤖 Send to LLM',
-    contexts: ['page'],
-  });
-
-  for (const providerId in LLM_PROVIDER_META) {
-    const provider = LLM_PROVIDER_META[providerId];
-    await createMenuItem({
-      id: `${DYNAMIC_PREFIXES.LLM_PROVIDER}${providerId}`,
-      parentId: PARENT_MENU_IDS.SEND_TO_LLM,
-      title: provider.name,
-      contexts: ['page'],
-    });
-  }
-}
 
 /**
  * Create the Run Code submenu (initially hidden, shown when matching rules exist).
@@ -278,7 +248,7 @@ async function createRunCodeMenu() {
 }
 
 /**
- * Create root-level "Nenya" menus: Tools, Appearance, and Developer.
+ * Create root-level "Nenya" menus: Tools and Developer.
  * @returns {Promise<void>}
  */
 async function createRootMenus() {
@@ -315,13 +285,6 @@ async function createRootMenus() {
   });
 
   await createMenuItem({
-    id: NENYA_MENU_IDS.CUSTOM_FILTER,
-    parentId: NENYA_MENU_IDS.TOOLS_PARENT,
-    title: '⚡️ Hide elements',
-    contexts: contexts,
-  });
-
-  await createMenuItem({
     id: NENYA_MENU_IDS.AUTO_RELOAD,
     parentId: NENYA_MENU_IDS.TOOLS_PARENT,
     title: '🔁 Auto reload',
@@ -333,28 +296,6 @@ async function createRootMenus() {
     parentId: NENYA_MENU_IDS.TOOLS_PARENT,
     title: '📥 Download as markdown',
     contexts: ['page', 'frame', 'selection', 'editable', 'image'],
-  });
-
-  // --- Appearance Submenu (Root Level) ---
-  await createMenuItem({
-    id: NENYA_MENU_IDS.APPEARANCE_PARENT,
-    // No parentId -> Root level
-    title: '🎨 Appearance',
-    contexts: contexts,
-  });
-
-  await createMenuItem({
-    id: NENYA_MENU_IDS.BRIGHT_MODE,
-    parentId: NENYA_MENU_IDS.APPEARANCE_PARENT,
-    title: '🔆 Bright mode',
-    contexts: contexts,
-  });
-
-  await createMenuItem({
-    id: NENYA_MENU_IDS.DARK_MODE,
-    parentId: NENYA_MENU_IDS.APPEARANCE_PARENT,
-    title: '🌘 Dark mode',
-    contexts: contexts,
   });
 
   // --- Developer Submenu (Root Level) ---
@@ -614,7 +555,6 @@ export async function setupContextMenus() {
         // Create all menu groups in order
         await createCopyMenu();
         await createRaindropMenu();
-        await createSendToLLMMenu();
         await createRunCodeMenu();
         await createRootMenus();
 
@@ -682,25 +622,6 @@ export function parseRunCodeMenuItem(menuItemId) {
   return null;
 }
 
-/**
- * Check if a menu item ID is a Send to LLM menu item.
- * @param {string} menuItemId
- * @returns {{ providerId: string } | null}
- */
-export function parseLLMMenuItem(menuItemId) {
-  if (typeof menuItemId !== 'string') {
-    return null;
-  }
-
-  if (menuItemId.startsWith(DYNAMIC_PREFIXES.LLM_PROVIDER)) {
-    const providerId = menuItemId.replace(DYNAMIC_PREFIXES.LLM_PROVIDER, '');
-    if (providerId && LLM_PROVIDER_META[providerId]) {
-      return { providerId };
-    }
-  }
-
-  return null;
-}
 
 /**
  * Get the copy format type from a menu item ID.

@@ -190,8 +190,8 @@ async function getCustomSearchEngines() {
  */
 const SHORTCUT_CONFIG = {
   getMarkdown: {
-    emoji: '💬',
-    tooltip: 'Chat with llm',
+    emoji: 'MD',
+    tooltip: 'Download as markdown',
     handler: () => handleGetMarkdown(),
     key: 'c',
   },
@@ -232,29 +232,11 @@ const SHORTCUT_CONFIG = {
     key: 'j',
     shift: true,
   },
-  customFilter: {
-    emoji: '⚡️',
-    tooltip: 'Hide elements in page',
-    handler: () => void handleCustomFilter(),
-    key: 'h',
-  },
   autoReload: {
     emoji: '🔁',
     tooltip: 'Auto reload this page',
     handler: () => void handleAutoReload(),
     key: 'r',
-  },
-  brightMode: {
-    emoji: '🔆',
-    tooltip: 'Render this page in bright mode',
-    handler: () => void handleBrightMode(),
-    key: 'b',
-  },
-  darkMode: {
-    emoji: '🌘',
-    tooltip: 'Render this page in dark mode',
-    handler: () => void handleDarkMode(),
-    key: 'd',
   },
   customCode: {
     emoji: '📑',
@@ -325,11 +307,10 @@ const RUN_CODE_SHORTCUT_KEYS = [
 
 /** @type {string[]} Default pinned shortcuts */
 const DEFAULT_PINNED_SHORTCUTS = [
-  'getMarkdown', // Chat with llm
+  'getMarkdown', // Download as markdown
   'saveUnsorted', // Save to unsorted
   'encryptSave', // Encrypt & save to unsorted
   'saveClipboardToUnsorted', // Save clipboard link to unsorted
-  'customFilter', // Hide elements in page
   'emojiPicker', // Emoji Picker
 ];
 
@@ -339,7 +320,6 @@ const LEGACY_DEFAULT_PINNED_SHORTCUTS = [
   'saveUnsorted',
   'encryptSave',
   'saveClipboardToUnsorted',
-  'customFilter',
   'openInPopup',
 ];
 
@@ -373,11 +353,8 @@ let getMarkdownButton = null;
 let saveUnsortedButton = null;
 let encryptSaveButton = null;
 let openOptionsButton = null;
-let customFilterButton = null;
 let importCustomCodeButton = null;
 let autoReloadButton = null;
-let brightModeButton = null;
-let darkModeButton = null;
 let customCodeButton = null;
 let takeScreenshotButton = null;
 
@@ -458,11 +435,8 @@ async function loadAndRenderShortcuts() {
     saveUnsortedButton = null;
     encryptSaveButton = null;
     openOptionsButton = null;
-    customFilterButton = null;
     importCustomCodeButton = null;
     autoReloadButton = null;
-    brightModeButton = null;
-    darkModeButton = null;
     customCodeButton = null;
 
     // Render buttons based on pinned shortcuts
@@ -514,20 +488,11 @@ async function loadAndRenderShortcuts() {
         case 'openOptions':
           openOptionsButton = button;
           break;
-        case 'customFilter':
-          customFilterButton = button;
-          break;
         case 'importCustomCode':
           importCustomCodeButton = button;
           break;
         case 'autoReload':
           autoReloadButton = button;
-          break;
-        case 'brightMode':
-          brightModeButton = button;
-          break;
-        case 'darkMode':
-          darkModeButton = button;
           break;
         case 'customCode':
           customCodeButton = button;
@@ -625,103 +590,7 @@ if (chrome?.storage?.onChanged) {
   });
 }
 
-/**
- * Handle opening dark mode options with current tab URL prefilled.
- * @returns {Promise<void>}
- */
 
-async function handleDarkMode() {
-  try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      if (statusMessage) {
-        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    const currentTab = tabs[0];
-    const currentUrl = typeof currentTab.url === 'string' ? currentTab.url : '';
-
-    if (!currentUrl) {
-      if (statusMessage) {
-        concludeStatus(
-          'No URL found for current tab.',
-          'error',
-          3000,
-          statusMessage,
-        );
-      }
-      return;
-    }
-
-    // Open options page with dark mode section hash
-    const optionsUrl = chrome.runtime.getURL('src/options/index.html');
-    chrome.tabs.create({
-      url: `${optionsUrl}#dark-mode-heading&url=${encodeURIComponent(
-        currentUrl,
-      )}`,
-    });
-    closeCurrentSurface();
-  } catch (error) {
-    console.error('[popup] Error opening dark mode options:', error);
-    if (statusMessage) {
-      concludeStatus(
-        'Unable to open dark mode options.',
-        'error',
-        3000,
-        statusMessage,
-      );
-    }
-  }
-}
-
-/**
- * Handle the custom filter creation.
- * @returns {Promise<void>}
- */
-async function handleCustomFilter() {
-  try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      if (statusMessage) {
-        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    const currentTab = tabs[0];
-
-    // Check if tab has a valid ID
-    if (typeof currentTab.id !== 'number') {
-      if (statusMessage) {
-        concludeStatus('Invalid tab ID.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    // Send message to background to launch the element picker
-    await chrome.runtime.sendMessage({
-      type: 'launchElementPicker',
-      tabId: currentTab.id,
-    });
-
-    // Close the popup
-    closeCurrentSurface();
-  } catch (error) {
-    console.error('[popup] Error launching element picker:', error);
-    if (statusMessage) {
-      concludeStatus(
-        'Unable to launch element picker.',
-        'error',
-        3000,
-        statusMessage,
-      );
-    }
-  }
-}
 
 /**
  * @typedef {Object} CustomCodeRule
@@ -933,7 +802,6 @@ async function handleImportCustomCode(file) {
 }
 
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
-const NOTION_SEARCH_MESSAGE = 'notion:search';
 const FETCH_SESSIONS_MESSAGE = 'mirror:fetchSessions';
 const FETCH_SESSION_DETAILS_MESSAGE = 'mirror:fetchSessionDetails';
 const RESTORE_SESSION_MESSAGE = 'mirror:restoreSession';
@@ -2445,19 +2313,11 @@ async function initializePopup() {
 }
 
 /**
- * Navigate to chat/emoji page when command flags are present in storage.
- * @param {{openChatPage?: boolean, openEmojiPage?: boolean}} flags
+ * Navigate to the emoji page when command flags are present in storage.
+ * @param {{openEmojiPage?: boolean}} flags
  * @returns {Promise<boolean>}
  */
 async function handleCommandNavigationFlags(flags) {
-  if (flags.openChatPage) {
-    await chrome.storage.local.remove('openChatPage');
-    if (!window.location.pathname.endsWith('chat.html')) {
-      window.location.href = 'chat.html';
-    }
-    return true;
-  }
-
   if (flags.openEmojiPage) {
     await chrome.storage.local.remove('openEmojiPage');
     if (!window.location.pathname.endsWith('emoji.html')) {
@@ -2469,12 +2329,11 @@ async function handleCommandNavigationFlags(flags) {
   return false;
 }
 
-// Check if we should navigate to chat page or emoji page (triggered by keyboard shortcut)
+// Check if we should navigate to the emoji page (triggered by keyboard shortcut)
 void (async () => {
   try {
-    const result = await chrome.storage.local.get(['openChatPage', 'openEmojiPage']);
+    const result = await chrome.storage.local.get(['openEmojiPage']);
     const navigated = await handleCommandNavigationFlags({
-      openChatPage: Boolean(result.openChatPage),
       openEmojiPage: Boolean(result.openEmojiPage),
     });
     if (navigated) {
@@ -2579,12 +2438,59 @@ window.addEventListener('unload', () => {
 
 /**
  * Handle getting page content as markdown.
- * Opens the chat with LLM page within the same popup.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function handleGetMarkdown() {
-  // Navigate to the chat page within the same popup window
-  window.location.href = 'chat.html';
+async function handleGetMarkdown() {
+  try {
+    if (statusMessage) {
+      concludeStatus('Preparing markdown download...', 'info', 2000, statusMessage);
+    }
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'collect-page-content-as-markdown',
+    });
+
+    if (!response?.success || !Array.isArray(response.contents)) {
+      throw new Error(response?.error || 'Failed to collect page content.');
+    }
+
+    let markdownContent = '';
+    response.contents.forEach((content, index) => {
+      markdownContent += `## Page ${index + 1}: ${content.title || 'Untitled'}\n\n`;
+      markdownContent += `**URL:** ${content.url || ''}\n\n`;
+      markdownContent += content.content || '';
+      markdownContent += '\n\n---\n\n';
+    });
+
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `page-content-${timestamp}.md`;
+    const blob = new Blob([markdownContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 0);
+
+    if (statusMessage) {
+      concludeStatus('Markdown downloaded.', 'success', 2500, statusMessage);
+    }
+  } catch (error) {
+    console.error('[popup] Failed to download markdown:', error);
+    if (statusMessage) {
+      concludeStatus(
+        error instanceof Error ? error.message : 'Failed to download markdown.',
+        'error',
+        4000,
+        statusMessage,
+      );
+    }
+  }
 }
 
 /**
@@ -2653,71 +2559,6 @@ async function handleAutoReload() {
   }
 }
 
-/**
- * Handle opening bright mode options with current tab URL prefilled in whitelist.
- * @returns {Promise<void>}
- */
-async function handleBrightMode() {
-  try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      if (statusMessage) {
-        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    const currentTab = tabs[0];
-    const currentUrl = typeof currentTab.url === 'string' ? currentTab.url : '';
-
-    if (!currentUrl) {
-      if (statusMessage) {
-        concludeStatus(
-          'No URL found for current tab.',
-          'error',
-          3000,
-          statusMessage,
-        );
-      }
-      return;
-    }
-
-    // Store the URL to prefill in options page
-    await chrome.storage.local.set({
-      brightModePrefillUrl: currentUrl,
-    });
-
-    // Open options page with bright mode section hash
-    chrome.runtime.openOptionsPage(() => {
-      const error = chrome.runtime.lastError;
-      if (error) {
-        console.error('[popup] Unable to open options page.', error);
-        if (statusMessage) {
-          concludeStatus(
-            'Unable to open options page.',
-            'error',
-            3000,
-            statusMessage,
-          );
-        }
-      } else {
-        // Close the popup
-        closeCurrentSurface();
-      }
-    });
-  } catch (error) {
-    console.error('[popup] Error opening bright mode options:', error);
-    if (statusMessage) {
-      concludeStatus(
-        'Unable to open bright mode options.',
-        'error',
-        3000,
-        statusMessage,
-      );
-    }
-  }
-}
 
 /**
  * Handle opening custom JS/CSS options with current tab URL prefilled.
@@ -2939,12 +2780,10 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
   }
 
   if (namespace === 'local') {
-    const openChatPage = changes.openChatPage?.newValue === true;
     const openEmojiPage = changes.openEmojiPage?.newValue === true;
 
-    if (openChatPage || openEmojiPage) {
+    if (openEmojiPage) {
       void handleCommandNavigationFlags({
-        openChatPage,
         openEmojiPage,
       }).catch((error) => {
         console.error(
@@ -2976,7 +2815,7 @@ async function initializeBookmarksSearch(
   customSearchSuggestionsElement,
 ) {
   /**
-   * @typedef {{ type: 'raindrop', data: any } | { type: 'raindrop-collection', data: any } | { type: 'notion-page', data: any } | { type: 'notion-data-source', data: any }} PopupSearchResult
+   * @typedef {{ type: 'raindrop', data: any } | { type: 'raindrop-collection', data: any }} PopupSearchResult
    */
 
   /**
@@ -3236,26 +3075,6 @@ async function initializeBookmarksSearch(
         }
         url = `https://app.raindrop.io/my/${collection._id}`;
         typeIcon = '📥';
-      } else if (result.type === 'notion-page') {
-        const page = result.data;
-        itemType = 'notion-page';
-        title = page.title || 'Untitled';
-        url = page.url;
-        typeIcon = '📝';
-        sourceChip =
-          '<span class="px-1.5 py-0.5 text-[9px] bg-neutral-200 text-neutral-700 rounded-md whitespace-nowrap ml-1 font-medium">Notion</span>';
-        secondaryChip =
-          '<span class="px-1.5 py-0.5 text-[9px] bg-base-200 text-base-content/70 rounded-md whitespace-nowrap ml-1 font-medium">Page</span>';
-      } else if (result.type === 'notion-data-source') {
-        const dataSource = result.data;
-        itemType = 'notion-data-source';
-        title = dataSource.title || 'Untitled';
-        url = dataSource.url;
-        typeIcon = '🗃️';
-        sourceChip =
-          '<span class="px-1.5 py-0.5 text-[9px] bg-neutral-200 text-neutral-700 rounded-md whitespace-nowrap ml-1 font-medium">Notion</span>';
-        secondaryChip =
-          '<span class="px-1.5 py-0.5 text-[9px] bg-base-200 text-base-content/70 rounded-md whitespace-nowrap ml-1 font-medium">Database</span>';
       }
 
       const truncatedUrl = url.startsWith('folder:')
@@ -3378,45 +3197,13 @@ async function initializeBookmarksSearch(
   }
 
   /**
-   * Sort normalized Notion search results using local weights first, then edit time.
-   * @param {Array<{type: 'notion-page' | 'notion-data-source', data: any}>} results
-   * @param {Record<string, number>} weights
-   * @returns {Array<{type: 'notion-page' | 'notion-data-source', data: any}>}
-   */
-  function sortNotionResults(results, weights) {
-    return [...results].sort((a, b) => {
-      const urlA = typeof a.data?.url === 'string' ? a.data.url : '';
-      const urlB = typeof b.data?.url === 'string' ? b.data.url : '';
-      const weightA = weights[urlA] || 0;
-      const weightB = weights[urlB] || 0;
-
-      if (weightA !== weightB) {
-        return weightB - weightA;
-      }
-
-      const lastEditedA = Date.parse(a.data?.lastEditedTime || '') || 0;
-      const lastEditedB = Date.parse(b.data?.lastEditedTime || '') || 0;
-      if (lastEditedA !== lastEditedB) {
-        return lastEditedB - lastEditedA;
-      }
-
-      const titleA = typeof a.data?.title === 'string' ? a.data.title : '';
-      const titleB = typeof b.data?.title === 'string' ? b.data.title : '';
-      return titleA.localeCompare(titleB);
-    });
-  }
-
-  /**
    * Builds the merged search result list from provider responses.
    * @param {{ items?: any[], collections?: any[] } | null} raindropResponse
-   * @param {{ notionPages?: any[], notionDataSources?: any[] } | null} notionResponse
    * @param {Record<string, number>} weights
    * @returns {PopupSearchResult[]}
    */
-  function buildMergedSearchResults(raindropResponse, notionResponse, weights) {
+  function buildMergedSearchResults(raindropResponse, weights) {
     const raindropResults = [];
-    const notionPageResults = [];
-    const notionDataSourceResults = [];
 
     // URLs to exclude from search results (internal/system URLs)
     const excludedUrlPatterns = [
@@ -3451,38 +3238,9 @@ async function initializeBookmarksSearch(
       }
     }
 
-    if (notionResponse) {
-      if (Array.isArray(notionResponse.notionPages)) {
-        notionResponse.notionPages.forEach((page) => {
-          notionPageResults.push({
-            type: 'notion-page',
-            data: page,
-          });
-        });
-      }
-
-      if (Array.isArray(notionResponse.notionDataSources)) {
-        notionResponse.notionDataSources.forEach((dataSource) => {
-          notionDataSourceResults.push({
-            type: 'notion-data-source',
-            data: dataSource,
-          });
-        });
-      }
-    }
-
     const processedRaindropResults = processSearchResults(raindropResults, weights);
-    const sortedNotionPages = sortNotionResults(notionPageResults, weights);
-    const sortedNotionDataSources = sortNotionResults(
-      notionDataSourceResults,
-      weights,
-    );
 
-    return [
-      ...processedRaindropResults,
-      ...sortedNotionPages,
-      ...sortedNotionDataSources,
-    ].slice(0, 50);
+    return processedRaindropResults.slice(0, 50);
   }
 
   /**
@@ -3726,9 +3484,7 @@ async function initializeBookmarksSearch(
 
     /** @type {{ items?: any[], collections?: any[] } | null} */
     let raindropResponse = null;
-    /** @type {{ notionPages?: any[], notionDataSources?: any[] } | null} */
-    let notionResponse = null;
-    let pendingProviders = 2;
+    let pendingProviders = 1;
 
     /**
      * Applies the latest provider state to the UI if this search is still active.
@@ -3739,11 +3495,7 @@ async function initializeBookmarksSearch(
         return;
       }
 
-      const mergedResults = buildMergedSearchResults(
-        raindropResponse,
-        notionResponse,
-        weights,
-      );
+      const mergedResults = buildMergedSearchResults(raindropResponse, weights);
       renderSearchState(mergedResults, pendingProviders > 0);
     }
 
@@ -3782,39 +3534,7 @@ async function initializeBookmarksSearch(
         finalizeProvider();
       });
 
-    const notionSearch = chrome.runtime
-      .sendMessage({
-        type: NOTION_SEARCH_MESSAGE,
-        query,
-      })
-      .then((response) => {
-        if (requestId !== activeSearchRequestId) {
-          return;
-        }
-        notionResponse = response || {
-          notionPages: [],
-          notionDataSources: [],
-        };
-        renderMergedState();
-      })
-      .catch((error) => {
-        console.warn('[popup] Notion search failed:', error);
-        if (requestId !== activeSearchRequestId) {
-          return;
-        }
-        notionResponse = {
-          notionPages: [],
-          notionDataSources: [],
-        };
-      })
-      .finally(() => {
-        if (requestId !== activeSearchRequestId) {
-          return;
-        }
-        finalizeProvider();
-      });
-
-    await Promise.allSettled([raindropSearch, notionSearch]);
+    await Promise.allSettled([raindropSearch]);
   }
 
 
@@ -3921,18 +3641,6 @@ async function initializeBookmarksSearch(
           const collectionUrl = `https://app.raindrop.io/my/${collection._id}`;
           void updateSearchResultWeight(collectionUrl);
           void openBookmark(collectionUrl);
-        } else if (
-          highlightedResult.type === 'notion-page' ||
-          highlightedResult.type === 'notion-data-source'
-        ) {
-          const notionUrl =
-            typeof highlightedResult.data?.url === 'string'
-              ? highlightedResult.data.url
-              : '';
-          if (notionUrl) {
-            void updateSearchResultWeight(notionUrl);
-            void openBookmark(notionUrl);
-          }
         }
         return;
       }

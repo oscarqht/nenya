@@ -534,23 +534,11 @@
           <span class="nav-icon text-lg">📌</span>
           <span>Pinned Shortcuts</span>
         </a>
-        <a href="#dark-mode-heading" class="nav-item nav-link" data-section="dark-mode-heading">
-          <span class="nav-icon text-lg">🌙</span>
-          <span>Dark Mode</span>
-        </a>
-        <a href="#bright-mode-heading" class="nav-item nav-link" data-section="bright-mode-heading">
-          <span class="nav-icon text-lg">☀️</span>
-          <span>Bright Mode</span>
-        </a>
 
         <div class="nav-group-title">Content Control</div>
         <a href="#auto-reload-heading" class="nav-item nav-link" data-section="auto-reload-heading">
           <span class="nav-icon text-lg">🔄</span>
           <span>Auto Reload Rules</span>
-        </a>
-        <a href="#block-elements-heading" class="nav-item nav-link" data-section="block-elements-heading">
-          <span class="nav-icon text-lg">🚫</span>
-          <span>Block Elements</span>
         </a>
         <a href="#custom-code-heading" class="nav-item nav-link" data-section="custom-code-heading">
           <span class="nav-icon text-lg">💻</span>
@@ -565,10 +553,6 @@
         <a href="#auto-google-login-heading" class="nav-item nav-link" data-section="auto-google-login-heading">
           <span class="nav-icon text-lg">🔑</span>
           <span>Auto Google Login</span>
-        </a>
-        <a href="#llm-prompts-heading" class="nav-item nav-link" data-section="llm-prompts-heading">
-          <span class="nav-icon text-lg">💬</span>
-          <span>LLM Prompts</span>
         </a>
       </nav>
     </aside>
@@ -618,45 +602,6 @@
                   <button id="disconnectButton" class="nenya-btn nenya-btn-danger" type="button" hidden>Logout</button>
                   <div class="flex gap-3 ml-auto">
                   </div>
-                </div>
-              </div>
-
-              <div class="options-card">
-                <div class="flex items-center gap-4 mb-6">
-                  <div
-                    class="w-14 h-14 bg-neutral-100 dark:bg-neutral-900/30 rounded-2xl flex items-center justify-center text-neutral-700">
-                    <span class="text-2xl">📝</span>
-                  </div>
-                  <div>
-                    <h3 class="text-lg font-bold">Notion</h3>
-                    <p class="text-sm text-base-content/60 mt-1">
-                      Save a Notion integration secret so popup search can include pages and databases shared with that integration.
-                    </p>
-                  </div>
-                </div>
-
-                <div class="space-y-4">
-                  <div>
-                    <label class="form-label" for="notionIntegrationSecretInput">Integration Secret</label>
-                    <input id="notionIntegrationSecretInput" type="password" class="nenya-input"
-                      placeholder="secret_xxx or ntn_xxx" autocomplete="off" spellcheck="false" />
-                  </div>
-
-                  <div class="text-sm text-base-content/60">
-                    Nenya validates the secret before saving it. Only content shared with the integration will appear in popup search.
-                  </div>
-
-                  <div id="notionIntegrationStatus" class="text-sm text-base-content/70" role="status"
-                    aria-live="polite">Not configured.</div>
-                </div>
-
-                <div class="flex flex-wrap gap-3 mt-6 pt-6 border-t border-base-300">
-                  <button id="saveNotionIntegrationButton" class="nenya-btn nenya-btn-primary" type="button">
-                    Save
-                  </button>
-                  <button id="clearNotionIntegrationButton" class="nenya-btn nenya-btn-secondary" type="button">
-                    Clear
-                  </button>
                 </div>
               </div>
             </div>
@@ -717,76 +662,6 @@
           </div>
         </section>
 
-        <!-- Dark Mode Section -->
-        <section class="section-content" data-section="dark-mode-heading" id="section-darkmode">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="dark-mode-heading" class="section-title">Dark Mode</h1>
-              <p class="section-description">Configure URL patterns for dark mode display.</p>
-            </div>
-
-            <div class="options-card mb-6">
-              <form id="darkModeRuleForm" novalidate>
-                <div class="flex gap-3 items-end">
-                  <div class="flex-1">
-                    <label class="form-label">URL Pattern</label>
-                    <input id="darkModePatternInput" class="nenya-input font-mono text-sm" type="text"
-                      autocomplete="off" placeholder="https://example.com/*" required>
-                  </div>
-                  <button id="darkModeSaveButton" class="nenya-btn nenya-btn-vibrant" type="submit">Add Rule</button>
-                  <button id="darkModeCancelEditButton" class="nenya-btn nenya-btn-secondary" type="button"
-                    hidden>Cancel</button>
-                </div>
-                <p class="text-sm text-base-content/40 mt-2">Uses browser URLPattern syntax (e.g. *://*.example.com/*)
-                </p>
-                <p id="darkModeFormError" class="text-sm text-error mt-2" hidden></p>
-              </form>
-            </div>
-
-            <div class="options-card">
-              <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Saved Rules</h3>
-              <div id="darkModeRulesEmpty" class="empty-state">No dark mode rules yet. Add one above to start.</div>
-              <div id="darkModeRulesList" class="space-y-3" role="list"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Bright Mode Section -->
-        <section class="section-content" data-section="bright-mode-heading" id="section-brightmode">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="bright-mode-heading" class="section-title">Bright Mode</h1>
-              <p class="section-description">Configure URL patterns for bright mode display.</p>
-            </div>
-
-            <div class="options-card mb-6">
-              <form id="brightModeWhitelistForm" novalidate>
-                <div class="flex gap-3 items-end">
-                  <div class="flex-1">
-                    <label class="form-label">URL Pattern</label>
-                    <input id="brightModeWhitelistPatternInput" class="nenya-input font-mono text-sm" type="text"
-                      autocomplete="off" placeholder="https://example.com/*" required>
-                  </div>
-                  <button id="brightModeWhitelistSaveButton" class="nenya-btn nenya-btn-vibrant" type="submit">Add
-                    Rule</button>
-                  <button id="brightModeWhitelistCancelEditButton" class="nenya-btn nenya-btn-secondary" type="button"
-                    hidden>Cancel</button>
-                </div>
-                <p class="text-sm text-base-content/40 mt-2">Uses browser URLPattern syntax (e.g. *://*.example.com/*)
-                </p>
-                <p id="brightModeWhitelistFormError" class="text-sm text-error mt-2" hidden></p>
-              </form>
-            </div>
-
-            <div class="options-card">
-              <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Saved Rules</h3>
-              <div id="brightModeWhitelistEmpty" class="empty-state">No bright mode rules yet. Add one above to start.
-              </div>
-              <div id="brightModeWhitelistList" class="space-y-3" role="list"></div>
-            </div>
-          </div>
-        </section>
-
         <!-- Auto Reload Section -->
         <section class="section-content" data-section="auto-reload-heading" id="section-autoreload">
           <div class="animate-in">
@@ -842,77 +717,6 @@
                     </div>
                   </div>
                 </dl>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Block Elements Section -->
-        <section class="section-content" data-section="block-elements-heading" id="section-block">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="block-elements-heading" class="section-title">Block Elements</h1>
-              <p class="section-description">Manage CSS selectors to block specific elements on web pages.</p>
-            </div>
-
-            <div class="info-box mb-6">
-              <svg class="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-              <p>Use the element picker from the extension popup to easily add new blocking rules while browsing.</p>
-            </div>
-
-            <div class="options-card">
-              <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Saved Rules</h3>
-              <div id="blockElementsRulesEmpty" class="empty-state">No blocking rules yet. Use the element picker (🎯
-                button in popup) to create rules.</div>
-              <div id="blockElementsRulesList" class="space-y-3" role="list"></div>
-
-              <div id="blockElementsRuleDetails" class="mt-6 pt-6 border-t border-base-300" hidden>
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-lg font-semibold">Rule Details</h3>
-                  <span id="blockElementsRuleSelectorCount" class="nenya-badge nenya-badge-violet"></span>
-                </div>
-                <dl class="space-y-4 text-sm">
-                  <div>
-                    <dt class="form-label">URL Pattern</dt>
-                    <dd class="flex items-center gap-2">
-                      <input id="blockElementsRulePatternInput" class="nenya-input font-mono text-sm" type="text"
-                        autocomplete="off" />
-                      <button id="blockElementsRulePatternSaveButton" class="nenya-btn nenya-btn-primary !py-2"
-                        type="button" hidden>Save</button>
-                      <button id="blockElementsRulePatternCancelButton" class="nenya-btn nenya-btn-secondary !py-2"
-                        type="button" hidden>Cancel</button>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt class="form-label">CSS Selectors</dt>
-                    <dd class="space-y-3">
-                      <div class="flex gap-2">
-                        <input id="blockElementsRuleAddSelectorInput" class="nenya-input font-mono text-sm flex-1"
-                          type="text" autocomplete="off" placeholder="Enter CSS selector (e.g., .ad-banner, #sidebar)">
-                        <button id="blockElementsRuleAddSelectorButton" class="nenya-btn nenya-btn-vibrant !py-2"
-                          type="button">Add</button>
-                      </div>
-                      <div id="blockElementsRuleSelectorsList" class="space-y-2"></div>
-                    </dd>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div>
-                      <dt class="form-label">Created</dt>
-                      <dd id="blockElementsRuleCreatedDetail"></dd>
-                    </div>
-                    <div>
-                      <dt class="form-label">Last Updated</dt>
-                      <dd id="blockElementsRuleUpdatedDetail"></dd>
-                    </div>
-                  </div>
-                </dl>
-                <div class="flex justify-end mt-4 pt-4 border-t border-base-300">
-                  <button id="blockElementsRuleDeleteButton" class="nenya-btn nenya-btn-danger" type="button">Delete
-                    Rule</button>
-                </div>
               </div>
             </div>
           </div>
@@ -1112,73 +916,6 @@
                     </div>
                   </div>
                 </dl>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- LLM Prompts Section -->
-        <section class="section-content" data-section="llm-prompts-heading" id="section-llm">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="llm-prompts-heading" class="section-title">LLM Saved Prompts</h1>
-              <p class="section-description">Manage saved prompts for Large Language Models.</p>
-            </div>
-
-            <div class="options-card mb-6">
-              <form id="llmPromptForm" class="space-y-4" novalidate>
-                <div>
-                  <label class="form-label">Prompt Name</label>
-                  <input id="llmPromptNameInput" class="nenya-input" type="text" autocomplete="off"
-                    placeholder="E.g., Code Review Assistant" required>
-                </div>
-                <div>
-                  <label class="form-label">Prompt Text</label>
-                  <textarea id="llmPromptTextInput" class="nenya-input resize-none"
-                    placeholder="Enter your prompt text here..." rows="6" required></textarea>
-                </div>
-                <p id="llmPromptFormError" class="text-sm text-error" hidden></p>
-                <div class="flex gap-3">
-                  <button id="llmPromptSaveButton" class="nenya-btn nenya-btn-vibrant" type="submit">Save
-                    Prompt</button>
-                  <button id="llmPromptCancelEditButton" class="nenya-btn nenya-btn-secondary" type="button"
-                    hidden>Cancel</button>
-                </div>
-              </form>
-            </div>
-
-            <div class="options-card">
-              <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Saved Prompts</h3>
-              <div id="llmPromptsEmpty" class="empty-state">No saved prompts yet. Add one above to start.</div>
-              <div id="llmPromptsList" class="grid grid-cols-1 md:grid-cols-2 gap-4" role="list"></div>
-
-              <div id="llmPromptDetails" class="mt-6 pt-6 border-t border-base-300" hidden>
-                <h3 class="text-lg font-semibold mb-4">Prompt Details</h3>
-                <dl class="space-y-4 text-sm">
-                  <div>
-                    <dt class="form-label">Name</dt>
-                    <dd id="llmPromptDetailName" class="font-medium"></dd>
-                  </div>
-                  <div>
-                    <dt class="form-label">Prompt</dt>
-                    <dd id="llmPromptDetailText"
-                      class="whitespace-pre-wrap bg-base-300 p-3 rounded-lg max-h-60 overflow-auto"></dd>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div>
-                      <dt class="form-label">Created</dt>
-                      <dd id="llmPromptDetailCreated"></dd>
-                    </div>
-                    <div>
-                      <dt class="form-label">Last Updated</dt>
-                      <dd id="llmPromptDetailUpdated"></dd>
-                    </div>
-                  </div>
-                </dl>
-                <div class="flex justify-between mt-4 pt-4 border-t border-base-300">
-                  <button id="llmPromptEditButton" class="nenya-btn nenya-btn-primary" type="button">Edit</button>
-                  <button id="llmPromptDeleteButton" class="nenya-btn nenya-btn-danger" type="button">Delete</button>
-                </div>
               </div>
             </div>
           </div>
