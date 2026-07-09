@@ -1,33 +1,6 @@
-/* global chrome */
+/* global chrome, URLPattern */
 
-import {
-  getBookmarkFolderPath,
-  ensureBookmarkFolderPath,
-} from '../shared/bookmarkFolders.js';
-import {
-  getWhitelistPatterns,
-  setPatterns,
-  isValidUrlPattern,
-} from './brightMode.js';
-import { loadLLMPrompts } from './llmPrompts.js';
 import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
-
-/**
- * @typedef {Object} RootFolderSettings
- * @property {string} parentFolderId
- * @property {string} rootFolderName
- */
-
-/**
- * @typedef {Object} RootFolderBackupSettings
- * @property {string} rootFolderName
- * @property {string} parentFolderPath
- * @property {string} [parentFolderId]
- */
-
-/**
- * @typedef {RootFolderBackupSettings} RootFolderImportSettings
- */
 
 /**
  * @typedef {Object} AutoReloadRuleSettings
@@ -68,27 +41,8 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
  * @property {NotificationClipboardSettings} clipboard
  */
 
-/**
- * @typedef {Object} BrightModePatternSettings
- * @property {string} id
- * @property {string} pattern
- * @property {string} [createdAt]
- * @property {string} [updatedAt]
- */
 
-/**
- * @typedef {Object} BrightModeSettings
- * @property {BrightModePatternSettings[]} whitelist
- */
 
-/**
- * @typedef {Object} BlockElementRuleSettings
- * @property {string} id
- * @property {string} urlPattern
- * @property {string[]} selectors
- * @property {string} [createdAt]
- * @property {string} [updatedAt]
- */
 
 /**
  * @typedef {Object} CustomCodeRuleSettings
@@ -111,14 +65,6 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
  * @property {string} [updatedAt]
  */
 
-/**
- * @typedef {Object} LLMPromptSettings
- * @property {string} id
- * @property {string} name
- * @property {string} prompt
- * @property {string} [createdAt]
- * @property {string} [updatedAt]
- */
 
 /**
  * @typedef {'add' | 'replace' | 'remove'} ProcessorType
@@ -187,17 +133,12 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
 /**
  * @typedef {Object} ExportPayload
  * @property {string} provider
- * @property {RootFolderBackupSettings} mirrorRootFolderSettings
  * @property {AutoReloadRuleSettings[]} autoReloadRules
- * @property {BrightModeSettings} brightModeSettings
- * @property {BlockElementRuleSettings[]} blockElementRules
  * @property {CustomCodeRuleSettings[]} customCodeRules
  * @property {RunCodeInPageRuleSettings[]} runCodeInPageRules
- * @property {LLMPromptSettings[]} llmPrompts
  * @property {AutoGoogleLoginRuleSettings[]} autoGoogleLoginRules
  * @property {string[]} pinnedShortcuts
  * @property {any[]} pinnedSearchResults
- * @property {string} notionIntegrationSecret
  */
 
 /**
@@ -208,18 +149,13 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
 
 const PROVIDER_ID = 'raindrop';
 const EXPORT_VERSION = 14;
-const ROOT_FOLDER_SETTINGS_KEY = 'mirrorRootFolderSettings';
 const AUTO_RELOAD_RULES_KEY = 'autoReloadRules';
-const BRIGHT_MODE_WHITELIST_KEY = 'brightModeWhitelist';
-const BLOCK_ELEMENT_RULES_KEY = 'blockElementRules';
 const CUSTOM_CODE_RULES_KEY = 'customCodeRules';
 const RUN_CODE_IN_PAGE_RULES_KEY = 'runCodeInPageRules';
-const LLM_PROMPTS_KEY = 'llmPrompts';
 const AUTO_GOOGLE_LOGIN_RULES_KEY = 'autoGoogleLoginRules';
 const PINNED_SHORTCUTS_KEY = 'pinnedShortcuts';
 const PINNED_SEARCH_RESULTS_KEY = 'pinnedSearchResults';
 const CUSTOM_SEARCH_ENGINES_KEY = 'customSearchEngines';
-const NOTION_INTEGRATION_SECRET_KEY = 'notionIntegrationSecret';
 const MIN_RULE_INTERVAL_SECONDS = 5;
 const DEFAULT_PARENT_PATH = '/Bookmarks Bar';
 
@@ -240,6 +176,67 @@ const TOAST_BACKGROUND_BY_VARIANT = {
   error: 'linear-gradient(135deg, #f97316, #ea580c)',
   info: 'linear-gradient(135deg, #3b82f6, #2563eb)',
 };
+
+const MAX_PINNED_SHORTCUTS = 7;
+const DEFAULT_PINNED_SHORTCUTS = [
+  'getMarkdown',
+  'saveUnsorted',
+  'encryptSave',
+  'saveClipboardToUnsorted',
+  'emojiPicker',
+];
+const AVAILABLE_PINNED_SHORTCUT_IDS = new Set([
+  'getMarkdown',
+  'saveUnsorted',
+  'encryptSave',
+  'saveClipboardToUnsorted',
+  'importCustomCode',
+  'autoReload',
+  'customCode',
+  'takeScreenshot',
+  'screenRecording',
+  'emojiPicker',
+]);
+
+/**
+ * Generate a unique identifier for imported/exported rules when missing.
+ * @returns {string}
+ */
+function generateRuleId() {
+  if (typeof crypto?.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const random = Math.random().toString(36).slice(2);
+  return 'rule-' + Date.now().toString(36) + '-' + random;
+}
+
+/**
+ * Deep clone plain JSON-like values.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function clonePreferences(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Validate a URLPattern-compatible pattern.
+ * @param {string} pattern
+ * @returns {boolean}
+ */
+function isValidUrlPattern(pattern) {
+  if (!pattern || typeof pattern !== 'string') {
+    return false;
+  }
+  try {
+    // eslint-disable-next-line no-new
+    new URLPattern(pattern.trim());
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Show a toast via Toastify when available.
@@ -272,890 +269,6 @@ function showToast(message, variant = 'info') {
   } catch (_) {
     // ignore
   }
-}
-
-/**
- * Normalize pinned search results array.
- * @param {unknown} value
- * @returns {any[]}
- */
-function normalizePinnedSearchResults(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item) => {
-    return (
-      item &&
-      typeof item === 'object' &&
-      typeof item.title === 'string' &&
-      typeof item.url === 'string' &&
-      typeof item.type === 'string'
-    );
-  });
-}
-
-/**
- * Deep clone helper for preferences.
- * @param {NotificationPreferences} value
- * @returns {NotificationPreferences}
- */
-function clonePreferences(value) {
-  return {
-    enabled: Boolean(value?.enabled),
-    bookmark: {
-      enabled: Boolean(value?.bookmark?.enabled),
-      pullFinished: Boolean(value?.bookmark?.pullFinished),
-      unsortedSaved: Boolean(value?.bookmark?.unsortedSaved),
-    },
-    project: {
-      enabled: Boolean(value?.project?.enabled),
-      saveProject: Boolean(value?.project?.saveProject),
-      addTabs: Boolean(value?.project?.addTabs),
-      replaceItems: Boolean(value?.project?.replaceItems),
-      deleteProject: Boolean(value?.project?.deleteProject),
-    },
-    clipboard: {
-      enabled: Boolean(value?.clipboard?.enabled),
-      copySuccess: Boolean(value?.clipboard?.copySuccess),
-    },
-  };
-}
-
-/**
- * Generate a stable identifier for auto reload rules lacking one.
- * @returns {string}
- */
-function generateRuleId() {
-  if (typeof crypto?.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  const random = Math.random().toString(36).slice(2);
-  return 'rule-' + Date.now().toString(36) + '-' + random;
-}
-
-/**
- * Sort rules in a stable order for exports.
- * @param {AutoReloadRuleSettings[]} rules
- * @returns {AutoReloadRuleSettings[]}
- */
-function sortAutoReloadRules(rules) {
-  return [...rules].sort((a, b) => {
-    const patternCompare = a.pattern.localeCompare(b.pattern);
-    if (patternCompare !== 0) {
-      return patternCompare;
-    }
-    return a.intervalSeconds - b.intervalSeconds;
-  });
-}
-
-/**
- * Normalize auto reload rules read from storage or input.
- * @param {unknown} value
- * @returns {AutoReloadRuleSettings[]}
- */
-function normalizeAutoReloadRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {AutoReloadRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, intervalSeconds?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!pattern) {
-      return;
-    }
-
-    try {
-      // Throws if invalid
-      // eslint-disable-next-line no-new
-      new URLPattern(pattern);
-    } catch (error) {
-      console.warn(
-        '[importExport:autoReload] Ignoring invalid pattern:',
-        pattern,
-        error,
-      );
-      return;
-    }
-
-    const intervalCandidate = Math.floor(Number(raw.intervalSeconds));
-    const intervalSeconds =
-      Number.isFinite(intervalCandidate) && intervalCandidate > 0
-        ? Math.max(MIN_RULE_INTERVAL_SECONDS, intervalCandidate)
-        : MIN_RULE_INTERVAL_SECONDS;
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {AutoReloadRuleSettings} */
-    const normalized = {
-      id,
-      pattern,
-      intervalSeconds,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sortAutoReloadRules(sanitized);
-}
-
-/**
- * Normalize bright mode patterns from storage or input.
- * @param {unknown} value
- * @returns {BrightModePatternSettings[]}
- */
-function normalizeBrightModePatterns(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {BrightModePatternSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!pattern) {
-      return;
-    }
-
-    if (!isValidUrlPattern(pattern)) {
-      console.warn(
-        '[importExport:brightMode] Ignoring invalid pattern:',
-        pattern,
-      );
-      return;
-    }
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {BrightModePatternSettings} */
-    const normalized = {
-      id,
-      pattern,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.pattern.localeCompare(b.pattern));
-}
-
-/**
- * Normalize block element rules from storage or input.
- * @param {unknown} value
- * @returns {BlockElementRuleSettings[]}
- */
-function normalizeBlockElementRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {BlockElementRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, urlPattern?: unknown, selectors?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const urlPattern =
-      typeof raw.urlPattern === 'string' ? raw.urlPattern.trim() : '';
-    if (!urlPattern) {
-      return;
-    }
-
-    if (!isValidUrlPattern(urlPattern)) {
-      console.warn(
-        '[importExport:blockElements] Ignoring invalid pattern:',
-        urlPattern,
-      );
-      return;
-    }
-
-    const selectors = Array.isArray(raw.selectors)
-      ? raw.selectors.filter((s) => typeof s === 'string' && s.trim())
-      : [];
-
-    if (selectors.length === 0) {
-      return;
-    }
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {BlockElementRuleSettings} */
-    const normalized = {
-      id,
-      urlPattern,
-      selectors,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.urlPattern.localeCompare(b.urlPattern));
-}
-
-/**
- * Normalize custom code rules from storage or input.
- * @param {unknown} value
- * @returns {CustomCodeRuleSettings[]}
- */
-function normalizeCustomCodeRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {CustomCodeRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, css?: unknown, js?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!pattern) {
-      return;
-    }
-
-    if (!isValidUrlPattern(pattern)) {
-      console.warn(
-        '[importExport:customCode] Ignoring invalid pattern:',
-        pattern,
-      );
-      return;
-    }
-
-    const css = typeof raw.css === 'string' ? raw.css : '';
-    const js = typeof raw.js === 'string' ? raw.js : '';
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {CustomCodeRuleSettings} */
-    const normalized = {
-      id,
-      pattern,
-      css,
-      js,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.pattern.localeCompare(b.pattern));
-}
-
-/**
- * Normalize run code in page rules from storage or input.
- * @param {unknown} value
- * @returns {RunCodeInPageRuleSettings[]}
- */
-function normalizeRunCodeInPageRules(value) {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    /** @type {RunCodeInPageRuleSettings[]} */
-    const sanitized = [];
-
-    value.forEach((entry) => {
-        if (!entry || typeof entry !== 'object') {
-            return;
-        }
-        const raw =
-            /** @type {{ id?: unknown, title?: unknown, patterns?: unknown, code?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */
-            (entry);
-
-        const title = typeof raw.title === 'string' ? raw.title.trim() : '';
-        if (!title) {
-            return;
-        }
-
-        const patterns = Array.isArray(raw.patterns) ?
-            raw.patterns.filter(p => {
-                if (typeof p !== 'string' || !p.trim()) return false;
-                try {
-                    new URLPattern(p);
-                    return true;
-                } catch {
-                    return false;
-                }
-            }) :
-            [];
-
-        const code = typeof raw.code === 'string' ? raw.code : '';
-
-        const id =
-            typeof raw.id === 'string' && raw.id.trim() ?
-            raw.id.trim() :
-            generateRuleId();
-
-        /** @type {RunCodeInPageRuleSettings} */
-        const normalized = {
-            id,
-            title,
-            patterns,
-            code,
-            disabled: !!raw.disabled,
-        };
-
-        if (typeof raw.createdAt === 'string') {
-            normalized.createdAt = raw.createdAt;
-        }
-        if (typeof raw.updatedAt === 'string') {
-            normalized.updatedAt = raw.updatedAt;
-        }
-
-        sanitized.push(normalized);
-    });
-
-    return sanitized.sort((a, b) => a.title.localeCompare(b.title));
-}
-
-/**
- * Normalize LLM prompts from storage or input.
- * @param {unknown} value
- * @returns {LLMPromptSettings[]}
- */
-function normalizeLLMPrompts(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {LLMPromptSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, name?: unknown, prompt?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-
-    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-    if (!name) {
-      return;
-    }
-
-    const prompt = typeof raw.prompt === 'string' ? raw.prompt : '';
-    if (!prompt) {
-      return;
-    }
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {LLMPromptSettings} */
-    const normalized = {
-      id,
-      name,
-      prompt,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Normalize URL process rules from storage or input.
- * @param {unknown} value
- * @returns {UrlProcessRuleSettings[]}
- */
-function normalizeUrlProcessRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {UrlProcessRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, name?: unknown, urlPatterns?: unknown, processors?: unknown, applyWhen?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-    if (!name) {
-      return;
-    }
-
-    const urlPatterns = Array.isArray(raw.urlPatterns)
-      ? raw.urlPatterns
-          .map((p) => (typeof p === 'string' ? p.trim() : ''))
-          .filter((p) => p && isValidUrlPattern(p))
-      : [];
-    if (urlPatterns.length === 0) {
-      return;
-    }
-
-    const processors = Array.isArray(raw.processors)
-      ? raw.processors
-          .map((p) => {
-            if (!p || typeof p !== 'object') {
-              return null;
-            }
-            const procRaw =
-              /** @type {{ id?: unknown, type?: unknown, name?: unknown, value?: unknown }} */ (
-                p
-              );
-            const type = procRaw.type;
-            if (
-              typeof type !== 'string' ||
-              !['add', 'replace', 'remove'].includes(type)
-            ) {
-              return null;
-            }
-            const procName =
-              typeof procRaw.name === 'string' ? procRaw.name.trim() : '';
-            if (!procName) {
-              return null;
-            }
-            // For replace and remove, name can be regex
-            if (type === 'replace' || type === 'remove') {
-              if (procName.startsWith('/') && procName.endsWith('/')) {
-                const regexPattern = procName.slice(1, -1);
-                try {
-                  new RegExp(regexPattern);
-                } catch {
-                  return null;
-                }
-              }
-            }
-            const procId =
-              typeof procRaw.id === 'string' && procRaw.id.trim()
-                ? procRaw.id.trim()
-                : generateRuleId();
-
-            /** @type {UrlProcessor} */
-            const processor = {
-              id: procId,
-              type: /** @type {'add' | 'replace' | 'remove'} */ (type),
-              name: procName,
-            };
-
-            if (type === 'add' || type === 'replace') {
-              const procValue =
-                typeof procRaw.value === 'string' ? procRaw.value : '';
-              processor.value = procValue;
-            }
-
-            return processor;
-          })
-          .filter((p) => p !== null)
-      : [];
-    if (processors.length === 0) {
-      return;
-    }
-
-    const applyWhen = Array.isArray(raw.applyWhen)
-      ? raw.applyWhen.filter((aw) =>
-          ['copy-to-clipboard', 'save-to-raindrop'].includes(aw),
-        )
-      : [];
-    if (applyWhen.length === 0) {
-      return;
-    }
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {UrlProcessRuleSettings} */
-    const normalized = {
-      id,
-      name,
-      urlPatterns,
-      processors,
-      applyWhen: /** @type {ApplyWhenOption[]} */ (applyWhen),
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Normalize title transform rules from storage or input.
- * @param {unknown} value
- * @returns {TitleTransformRuleSettings[]}
- */
-function normalizeTitleTransformRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {TitleTransformRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, name?: unknown, urlPatterns?: unknown, operations?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-    if (!name) {
-      return;
-    }
-
-    const urlPatterns = Array.isArray(raw.urlPatterns)
-      ? raw.urlPatterns
-          .map((p) => (typeof p === 'string' ? p.trim() : ''))
-          .filter((p) => p && isValidUrlPattern(p))
-      : [];
-    if (urlPatterns.length === 0) {
-      return;
-    }
-
-    const operations = Array.isArray(raw.operations)
-      ? raw.operations
-          .map((op) => {
-            if (!op || typeof op !== 'object') {
-              return null;
-            }
-            const opRaw =
-              /** @type {{ id?: unknown, type?: unknown, pattern?: unknown, value?: unknown }} */ (
-                op
-              );
-            const type = opRaw.type;
-            if (
-              typeof type !== 'string' ||
-              !['remove', 'replace', 'prefix', 'suffix'].includes(type)
-            ) {
-              return null;
-            }
-
-            /** @type {TitleTransformOperationSettings} */
-            const operation = {
-              id:
-                typeof opRaw.id === 'string' && opRaw.id.trim()
-                  ? opRaw.id.trim()
-                  : 'op-' +
-                    Date.now().toString(36) +
-                    '-' +
-                    Math.random().toString(36).slice(2),
-              type: /** @type {TitleTransformOperationType} */ (type),
-            };
-
-            // For remove and replace, pattern is required
-            if (type === 'remove' || type === 'replace') {
-              const pattern =
-                typeof opRaw.pattern === 'string' ? opRaw.pattern.trim() : '';
-              if (!pattern) {
-                return null;
-              }
-              operation.pattern = pattern;
-              // For replace, value is optional (defaults to empty string)
-              if (type === 'replace') {
-                operation.value =
-                  typeof opRaw.value === 'string' ? opRaw.value : '';
-              }
-            } else {
-              // For prefix and suffix, value is required
-              const value = typeof opRaw.value === 'string' ? opRaw.value : '';
-              if (!value) {
-                return null;
-              }
-              operation.value = value;
-            }
-
-            return operation;
-          })
-          .filter((op) => op !== null)
-      : [];
-    if (operations.length === 0) {
-      return;
-    }
-
-    /** @type {TitleTransformRuleSettings} */
-    const normalized = {
-      id:
-        typeof raw.id === 'string' && raw.id.trim()
-          ? raw.id.trim()
-          : 'rule-' +
-            Date.now().toString(36) +
-            '-' +
-            Math.random().toString(36).slice(2),
-      name,
-      urlPatterns,
-      operations,
-      disabled: !!raw.disabled,
-    };
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/**
- * Normalize auto Google login rules from storage or input.
- * @param {unknown} value
- * @returns {AutoGoogleLoginRuleSettings[]}
- */
-function normalizeAutoGoogleLoginRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  /** @type {AutoGoogleLoginRuleSettings[]} */
-  const sanitized = [];
-
-  value.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return;
-    }
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, email?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!pattern) {
-      return;
-    }
-
-    if (!isValidUrlPattern(pattern)) {
-      console.warn(
-        '[importExport:autoGoogleLogin] Ignoring invalid pattern:',
-        pattern,
-      );
-      return;
-    }
-
-    const email = typeof raw.email === 'string' ? raw.email.trim() : undefined;
-    if (email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        console.warn(
-          '[importExport:autoGoogleLogin] Ignoring invalid email:',
-          email,
-        );
-        return;
-      }
-    }
-
-    const id =
-      typeof raw.id === 'string' && raw.id.trim()
-        ? raw.id.trim()
-        : generateRuleId();
-
-    /** @type {AutoGoogleLoginRuleSettings} */
-    const normalized = {
-      id,
-      pattern,
-    };
-
-    if (email) {
-      normalized.email = email;
-    }
-
-    if (typeof raw.createdAt === 'string') {
-      normalized.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      normalized.updatedAt = raw.updatedAt;
-    }
-
-    sanitized.push(normalized);
-  });
-
-  return sanitized.sort((a, b) => {
-    const patternCompare = a.pattern.localeCompare(b.pattern);
-    if (patternCompare !== 0) {
-      return patternCompare;
-    }
-    const emailA = a.email || '';
-    const emailB = b.email || '';
-    return emailA.localeCompare(emailB);
-  });
-}
-
-/**
- * Normalize pinned shortcuts array.
- * @param {unknown} value
- * @returns {string[]}
- */
-function normalizePinnedShortcuts(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  // Valid shortcut IDs (excluding openOptions which is always shown)
-  const validIds = [
-    'getMarkdown',
-    'saveUnsorted',
-    'encryptSave',
-    'saveClipboardToUnsorted',
-    'importCustomCode',
-    'customFilter',
-    'autoReload',
-    'brightMode',
-    'darkMode',
-    'customCode',
-    'takeScreenshot',
-    'screenRecording',
-    'emojiPicker',
-  ];
-
-  return value
-    .filter((id) => typeof id === 'string' && validIds.includes(id))
-    .slice(0, 7); // Limit to max 7 shortcuts
-}
-
-/**
- * Normalize screenshot settings.
- * @param {unknown} value
- * @returns {ScreenshotSettings}
- */
-function normalizeScreenshotSettings(value) {
-  const fallback = { autoSave: false };
-  if (!value || typeof value !== 'object') {
-    return fallback;
-  }
-
-  const raw = /** @type {Partial<ScreenshotSettings>} */ (value);
-  return {
-    autoSave:
-      typeof raw.autoSave === 'boolean' ? raw.autoSave : fallback.autoSave,
-  };
-}
-
-/**
- * Normalize custom search engines.
- * @param {any} value
- * @returns {Array<{id: string, name: string, shortcut: string, searchUrl: string}>}
- */
-function normalizeCustomSearchEngines(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter((engine) => {
-      return (
-        engine &&
-        typeof engine === 'object' &&
-        typeof engine.id === 'string' &&
-        engine.id.trim() &&
-        typeof engine.name === 'string' &&
-        engine.name.trim() &&
-        typeof engine.shortcut === 'string' &&
-        engine.shortcut.trim() &&
-        typeof engine.searchUrl === 'string' &&
-        engine.searchUrl.includes('%s')
-      );
-    })
-    .map((engine) => ({
-      id: engine.id.trim(),
-      name: engine.name.trim(),
-      shortcut: engine.shortcut.trim(),
-      searchUrl: engine.searchUrl.trim(),
-    }));
-}
-
-/**
- * Normalize a Notion integration secret.
- * @param {unknown} value
- * @returns {string}
- */
-function normalizeNotionIntegrationSecret(value) {
-  return typeof value === 'string' ? value.trim() : '';
 }
 
 /**
@@ -1241,125 +354,360 @@ function normalizePreferences(value) {
 }
 
 /**
- * Read current settings used by Options backup.
- * @returns {Promise<{ rootFolder: RootFolderBackupSettings, autoReloadRules: AutoReloadRuleSettings[], brightModeSettings: BrightModeSettings, blockElementRules: BlockElementRuleSettings[], customCodeRules: CustomCodeRuleSettings[], runCodeInPageRules: RunCodeInPageRules[], llmPrompts: LLMPromptSettings[], autoGoogleLoginRules: AutoGoogleLoginRuleSettings[], pinnedShortcuts: string[], pinnedSearchResults: any[], notionIntegrationSecret: string }>}
+ * Normalize auto reload rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<AutoReloadRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeAutoReloadRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, intervalSeconds?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const intervalCandidate = Math.floor(Number(raw.intervalSeconds));
+    const intervalSeconds =
+      Number.isFinite(intervalCandidate) && intervalCandidate > 0
+        ? Math.max(MIN_RULE_INTERVAL_SECONDS, intervalCandidate)
+        : MIN_RULE_INTERVAL_SECONDS;
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      intervalSeconds,
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<AutoReloadRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize custom code rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<CustomCodeRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeCustomCodeRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, css?: unknown, js?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      css: typeof raw.css === 'string' ? raw.css : '',
+      js: typeof raw.js === 'string' ? raw.js : '',
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<CustomCodeRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize run code in page rules for import/export.
+ * @param {unknown} value
+ * @returns {RunCodeInPageRuleSettings[]}
+ */
+function normalizeRunCodeInPageRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, title?: unknown, patterns?: unknown, code?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    if (!title) {
+      return rules;
+    }
+
+    const patterns = Array.isArray(raw.patterns)
+      ? raw.patterns.filter(
+          (pattern) =>
+            typeof pattern === 'string' && isValidUrlPattern(pattern.trim()),
+        )
+      : [];
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    /** @type {RunCodeInPageRuleSettings} */
+    const rule = {
+      id,
+      title,
+      patterns,
+      code: typeof raw.code === 'string' ? raw.code : '',
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {RunCodeInPageRuleSettings[]} */ ([]));
+}
+
+/**
+ * Normalize auto Google login rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<AutoGoogleLoginRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeAutoGoogleLoginRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, email?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.email === 'string' && raw.email.trim()) {
+      rule.email = raw.email.trim();
+    }
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<AutoGoogleLoginRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize pinned shortcuts for import/export.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function normalizePinnedShortcuts(value) {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_PINNED_SHORTCUTS];
+  }
+
+  const deduped = [];
+  for (const item of value) {
+    if (
+      typeof item !== 'string' ||
+      item === 'openOptions' ||
+      !AVAILABLE_PINNED_SHORTCUT_IDS.has(item) ||
+      deduped.includes(item)
+    ) {
+      continue;
+    }
+    deduped.push(item);
+    if (deduped.length >= MAX_PINNED_SHORTCUTS) {
+      break;
+    }
+  }
+
+  return deduped.length > 0 ? deduped : [...DEFAULT_PINNED_SHORTCUTS];
+}
+
+/**
+ * Normalize pinned search results for import/export.
+ * @param {unknown} value
+ * @returns {Array<{title: string, url: string, type: string}>}
+ */
+function normalizePinnedSearchResults(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((items, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return items;
+    }
+
+    const raw =
+      /** @type {{ title?: unknown, url?: unknown, type?: unknown }} */ (entry);
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+    if (!title || !url) {
+      return items;
+    }
+
+    items.push({
+      title,
+      url,
+      type: typeof raw.type === 'string' ? raw.type : '',
+    });
+    return items;
+  }, /** @type {Array<{title: string, url: string, type: string}>} */ ([]));
+}
+
+/**
+ * Normalize custom search engines for import/export.
+ * @param {unknown} value
+ * @returns {Array<{id: string, name: string, shortcut: string, searchUrl: string}>}
+ */
+function normalizeCustomSearchEngines(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenShortcuts = new Set();
+  return value.reduce((engines, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return engines;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, name?: unknown, shortcut?: unknown, searchUrl?: unknown }} */ (
+        entry
+      );
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    const shortcut =
+      typeof raw.shortcut === 'string' ? raw.shortcut.trim() : '';
+    const searchUrl =
+      typeof raw.searchUrl === 'string' ? raw.searchUrl.trim() : '';
+    if (!name || !shortcut || !searchUrl || !searchUrl.includes('%s')) {
+      return engines;
+    }
+
+    const normalizedShortcut = shortcut.toLowerCase();
+    if (seenShortcuts.has(normalizedShortcut)) {
+      return engines;
+    }
+    seenShortcuts.add(normalizedShortcut);
+
+    engines.push({
+      id:
+        typeof raw.id === 'string' && raw.id.trim()
+          ? raw.id.trim()
+          : 'se-' + Date.now().toString(36) + '-' + engines.length,
+      name,
+      shortcut,
+      searchUrl,
+    });
+    return engines;
+  }, /** @type {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} */ ([]));
+}
+
+/**
+ * Read current settings used by options import/export.
+ * @returns {Promise<{ autoReloadRules: AutoReloadRuleSettings[], customCodeRules: CustomCodeRuleSettings[], runCodeInPageRules: RunCodeInPageRuleSettings[], autoGoogleLoginRules: AutoGoogleLoginRuleSettings[], pinnedShortcuts: string[], pinnedSearchResults: any[], customSearchEngines: Array<{id: string, name: string, shortcut: string, searchUrl: string}> }>}
  */
 async function readCurrentOptions() {
   const [
-    rootResp,
     reloadResp,
-    whitelistPatterns,
-    blockElementResp,
     customCodeResp,
     runCodeInPageResp,
-    llmPromptsResp,
     autoGoogleLoginRulesResp,
     pinnedShortcutsResp,
     pinnedSearchResultsResp,
     customSearchEnginesResp,
-    notionIntegrationSecretResp,
   ] = await Promise.all([
-    chrome.storage.local.get(ROOT_FOLDER_SETTINGS_KEY),
     chrome.storage.local.get(AUTO_RELOAD_RULES_KEY),
-    getWhitelistPatterns(),
-    chrome.storage.local.get(BLOCK_ELEMENT_RULES_KEY),
     chrome.storage.local.get(CUSTOM_CODE_RULES_KEY),
     chrome.storage.local.get(RUN_CODE_IN_PAGE_RULES_KEY),
-    loadLLMPrompts(),
     loadAutoGoogleLoginRules(),
     chrome.storage.local.get(PINNED_SHORTCUTS_KEY),
     chrome.storage.local.get(PINNED_SEARCH_RESULTS_KEY),
     chrome.storage.local.get(CUSTOM_SEARCH_ENGINES_KEY),
-    chrome.storage.local.get(NOTION_INTEGRATION_SECRET_KEY),
   ]);
 
-  /** @type {Record<string, RootFolderSettings> | undefined} */
-  const rootMap = /** @type {*} */ (rootResp?.[ROOT_FOLDER_SETTINGS_KEY]);
-  const rootCandidate = rootMap?.[PROVIDER_ID];
-  const parentFolderId =
-    typeof rootCandidate?.parentFolderId === 'string' &&
-    rootCandidate.parentFolderId
-      ? rootCandidate.parentFolderId
-      : '1';
-  const rootFolderName =
-    typeof rootCandidate?.rootFolderName === 'string' &&
-    rootCandidate.rootFolderName
-      ? rootCandidate.rootFolderName
-      : 'Raindrop';
-
-  let parentFolderPath = '';
-  try {
-    parentFolderPath = await getBookmarkFolderPath(parentFolderId);
-  } catch (error) {
-    console.warn(
-      '[importExport] Failed to resolve parent folder path for export:',
-      error,
-    );
-  }
-  if (!parentFolderPath) {
-    parentFolderPath = DEFAULT_PARENT_PATH;
-  }
-
-  /** @type {RootFolderBackupSettings} */
-  const rootFolder = {
-    parentFolderId,
-    parentFolderPath,
-    rootFolderName,
-  };
-
-  const autoReloadRules = normalizeAutoReloadRules(
-    reloadResp?.[AUTO_RELOAD_RULES_KEY],
-  );
-
-  const brightModeSettings = {
-    whitelist: whitelistPatterns,
-  };
-
-  const blockElementRules = normalizeBlockElementRules(
-    blockElementResp?.[BLOCK_ELEMENT_RULES_KEY],
-  );
-
-  const customCodeRules = normalizeCustomCodeRules(
-    customCodeResp?.[CUSTOM_CODE_RULES_KEY],
-  );
-
-  const runCodeInPageRules = normalizeRunCodeInPageRules(
-    runCodeInPageResp?.[RUN_CODE_IN_PAGE_RULES_KEY],
-  );
-
-  const llmPrompts = normalizeLLMPrompts(llmPromptsResp);
-
-  const autoGoogleLoginRules = normalizeAutoGoogleLoginRules(
-    autoGoogleLoginRulesResp,
-  );
-
-  const pinnedShortcuts = normalizePinnedShortcuts(
-    pinnedShortcutsResp?.[PINNED_SHORTCUTS_KEY],
-  );
-  const pinnedSearchResults = normalizePinnedSearchResults(
-    pinnedSearchResultsResp?.[PINNED_SEARCH_RESULTS_KEY],
-  );
-
-  const customSearchEngines = normalizeCustomSearchEngines(
-    customSearchEnginesResp?.[CUSTOM_SEARCH_ENGINES_KEY],
-  );
-  const notionIntegrationSecret = normalizeNotionIntegrationSecret(
-    notionIntegrationSecretResp?.[NOTION_INTEGRATION_SECRET_KEY],
-  );
-
   return {
-    rootFolder,
-    autoReloadRules,
-    brightModeSettings,
-    blockElementRules,
-    customCodeRules,
-    runCodeInPageRules,
-    llmPrompts,
-    autoGoogleLoginRules,
-    pinnedShortcuts,
-    pinnedSearchResults,
-    customSearchEngines,
-    notionIntegrationSecret,
+    autoReloadRules: normalizeAutoReloadRules(
+      reloadResp?.[AUTO_RELOAD_RULES_KEY],
+    ),
+    customCodeRules: normalizeCustomCodeRules(
+      customCodeResp?.[CUSTOM_CODE_RULES_KEY],
+    ),
+    runCodeInPageRules: normalizeRunCodeInPageRules(
+      runCodeInPageResp?.[RUN_CODE_IN_PAGE_RULES_KEY],
+    ),
+    autoGoogleLoginRules: normalizeAutoGoogleLoginRules(
+      autoGoogleLoginRulesResp,
+    ),
+    pinnedShortcuts: normalizePinnedShortcuts(
+      pinnedShortcutsResp?.[PINNED_SHORTCUTS_KEY],
+    ),
+    pinnedSearchResults: normalizePinnedSearchResults(
+      pinnedSearchResultsResp?.[PINNED_SEARCH_RESULTS_KEY],
+    ),
+    customSearchEngines: normalizeCustomSearchEngines(
+      customSearchEnginesResp?.[CUSTOM_SEARCH_ENGINES_KEY],
+    ),
   };
 }
 
@@ -1391,36 +739,26 @@ function downloadJson(data, filename) {
 async function handleExportClick() {
   try {
     const {
-      rootFolder,
       autoReloadRules,
-      brightModeSettings,
-      blockElementRules,
       customCodeRules,
       runCodeInPageRules,
-      llmPrompts,
       autoGoogleLoginRules,
       pinnedShortcuts,
       pinnedSearchResults,
       customSearchEngines,
-      notionIntegrationSecret,
     } = await readCurrentOptions();
     /** @type {ExportFile} */
     const payload = {
       version: EXPORT_VERSION,
       data: {
         provider: PROVIDER_ID,
-        mirrorRootFolderSettings: rootFolder,
         autoReloadRules,
-        brightModeSettings,
-        blockElementRules,
         customCodeRules,
         runCodeInPageRules,
-        llmPrompts,
         autoGoogleLoginRules,
         pinnedShortcuts,
         pinnedSearchResults,
         customSearchEngines,
-        notionIntegrationSecret,
       },
     };
     const now = new Date();
@@ -1441,145 +779,53 @@ async function handleExportClick() {
 
 /**
  * Apply imported settings to storage.
- * @param {RootFolderImportSettings} rootFolder
  * @param {AutoReloadRuleSettings[]} autoReloadRules
- * @param {BrightModeSettings} brightModeSettings
- * @param {BlockElementRuleSettings[]} blockElementRules
  * @param {CustomCodeRuleSettings[]} customCodeRules
  * @param {RunCodeInPageRuleSettings[]} runCodeInPageRules
- * @param {LLMPromptSettings[]} llmPrompts
  * @param {AutoGoogleLoginRuleSettings[]} autoGoogleLoginRules
  * @param {string[]} pinnedShortcuts
  * @param {any[]} pinnedSearchResults
  * @param {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} customSearchEngines
- * @param {string} notionIntegrationSecret
  * @returns {Promise<void>}
  */
 async function applyImportedOptions(
-  rootFolder,
   autoReloadRules,
-  brightModeSettings,
-  blockElementRules,
   customCodeRules,
   runCodeInPageRules,
-  llmPrompts,
   autoGoogleLoginRules,
   pinnedShortcuts,
   pinnedSearchResults,
   customSearchEngines,
-  notionIntegrationSecret,
 ) {
-  let parentFolderId = '';
-  const desiredPath =
-    typeof rootFolder?.parentFolderPath === 'string'
-      ? rootFolder.parentFolderPath.trim()
-      : '';
-
-  if (desiredPath) {
-    try {
-      const ensuredId = await ensureBookmarkFolderPath(desiredPath);
-      if (ensuredId) {
-        parentFolderId = ensuredId;
-      }
-    } catch (error) {
-      console.warn(
-        '[importExport] Failed to ensure parent folder path during import:',
-        error,
-      );
-    }
-  }
-
-  if (!parentFolderId) {
-    parentFolderId =
-      typeof rootFolder?.parentFolderId === 'string' &&
-      rootFolder.parentFolderId
-        ? rootFolder.parentFolderId
-        : '';
-  }
-
-  if (!parentFolderId) {
-    parentFolderId = '1';
-  }
-
-  // Sanitize
-  const sanitizedRoot = {
-    parentFolderId,
-    rootFolderName:
-      typeof rootFolder?.rootFolderName === 'string' &&
-      rootFolder.rootFolderName
-        ? rootFolder.rootFolderName
-        : 'Raindrop',
-  };
   const sanitizedRules = normalizeAutoReloadRules(autoReloadRules);
-  const sanitizedBlockElementRules = normalizeBlockElementRules(
-    blockElementRules || [],
-  );
-
   const sanitizedCustomCodeRules = normalizeCustomCodeRules(
     customCodeRules || [],
   );
-
   const sanitizedRunCodeInPageRules = normalizeRunCodeInPageRules(
     runCodeInPageRules || [],
   );
-
-  const sanitizedLLMPrompts = normalizeLLMPrompts(llmPrompts || []);
-
   const sanitizedAutoGoogleLoginRules = normalizeAutoGoogleLoginRules(
     autoGoogleLoginRules || [],
   );
-
   const sanitizedPinnedShortcuts = normalizePinnedShortcuts(
     pinnedShortcuts || [],
   );
-
   const sanitizedPinnedSearchResults = normalizePinnedSearchResults(
     pinnedSearchResults || [],
   );
-
   const sanitizedCustomSearchEngines = normalizeCustomSearchEngines(
     customSearchEngines || [],
   );
-  const sanitizedNotionIntegrationSecret = normalizeNotionIntegrationSecret(
-    notionIntegrationSecret,
-  );
 
-  // Handle bright mode settings - support both old and new format
-  let sanitizedWhitelist = [];
-
-  if (brightModeSettings && typeof brightModeSettings === 'object') {
-    // New format: { whitelist: [...] }
-    sanitizedWhitelist = normalizeBrightModePatterns(
-      brightModeSettings.whitelist || [],
-    );
-  } else {
-    // Fallback for old format or missing data
-    sanitizedWhitelist = [];
-  }
-
-  // Read existing map to preserve other providers if any
-  const existing = await chrome.storage.local.get(ROOT_FOLDER_SETTINGS_KEY);
-  /** @type {Record<string, RootFolderSettings>} */
-  const map = /** @type {*} */ (existing?.[ROOT_FOLDER_SETTINGS_KEY]) || {};
-  map[PROVIDER_ID] = sanitizedRoot;
-
-  // Persist all keys (custom code rules go to local storage due to size)
-  await Promise.all([
-    chrome.storage.local.set({
-      [ROOT_FOLDER_SETTINGS_KEY]: map,
-      [AUTO_RELOAD_RULES_KEY]: sanitizedRules,
-      [BRIGHT_MODE_WHITELIST_KEY]: sanitizedWhitelist,
-      [BLOCK_ELEMENT_RULES_KEY]: sanitizedBlockElementRules,
-      [LLM_PROMPTS_KEY]: sanitizedLLMPrompts,
-      [AUTO_GOOGLE_LOGIN_RULES_KEY]: sanitizedAutoGoogleLoginRules,
-      [PINNED_SHORTCUTS_KEY]: sanitizedPinnedShortcuts,
-      [PINNED_SEARCH_RESULTS_KEY]: sanitizedPinnedSearchResults,
-      [CUSTOM_SEARCH_ENGINES_KEY]: sanitizedCustomSearchEngines,
-      [NOTION_INTEGRATION_SECRET_KEY]: sanitizedNotionIntegrationSecret,
-      [CUSTOM_CODE_RULES_KEY]: sanitizedCustomCodeRules,
-      [RUN_CODE_IN_PAGE_RULES_KEY]: sanitizedRunCodeInPageRules,
-    }),
-  ]);
+  await chrome.storage.local.set({
+    [AUTO_RELOAD_RULES_KEY]: sanitizedRules,
+    [AUTO_GOOGLE_LOGIN_RULES_KEY]: sanitizedAutoGoogleLoginRules,
+    [PINNED_SHORTCUTS_KEY]: sanitizedPinnedShortcuts,
+    [PINNED_SEARCH_RESULTS_KEY]: sanitizedPinnedSearchResults,
+    [CUSTOM_SEARCH_ENGINES_KEY]: sanitizedCustomSearchEngines,
+    [CUSTOM_CODE_RULES_KEY]: sanitizedCustomCodeRules,
+    [RUN_CODE_IN_PAGE_RULES_KEY]: sanitizedRunCodeInPageRules,
+  });
 }
 
 /**
@@ -1606,23 +852,14 @@ async function handleFileChosen() {
       throw new Error('Unsupported provider in file.');
     }
 
-    const root = /** @type {RootFolderImportSettings} */ (
-      data.mirrorRootFolderSettings
-    );
     const autoReloadRules = /** @type {AutoReloadRuleSettings[]} */ (
       data.autoReloadRules
-    );
-    const blockElementRules = /** @type {BlockElementRuleSettings[]} */ (
-      data.blockElementRules || []
     );
     const customCodeRules = /** @type {CustomCodeRuleSettings[]} */ (
       data.customCodeRules || []
     );
     const runCodeInPageRules = /** @type {RunCodeInPageRuleSettings[]} */ (
       data.runCodeInPageRules || []
-    );
-    const llmPrompts = /** @type {LLMPromptSettings[]} */ (
-      data.llmPrompts || []
     );
     const autoGoogleLoginRules = /** @type {AutoGoogleLoginRuleSettings[]} */ (
       data.autoGoogleLoginRules || []
@@ -1637,37 +874,17 @@ async function handleFileChosen() {
       /** @type {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} */ (
         data.customSearchEngines || []
       );
-    const notionIntegrationSecret = normalizeNotionIntegrationSecret(
-      data.notionIntegrationSecret,
-    );
-
-    // Handle bright mode settings - support both old and new format
-    let brightModeSettings = data.brightModeSettings;
-    if (
-      !brightModeSettings &&
-      (data.brightModeWhitelist || data.brightModeBlacklist)
-    ) {
-      // Convert old format to new format (ignore blacklist)
-      brightModeSettings = {
-        whitelist: data.brightModeWhitelist || [],
-      };
-    }
-    brightModeSettings = brightModeSettings || { whitelist: [] };
 
     await applyImportedOptions(
-      root,
       autoReloadRules,
-      brightModeSettings,
-      blockElementRules,
       customCodeRules,
       runCodeInPageRules,
-      llmPrompts,
       autoGoogleLoginRules,
       pinnedShortcuts,
       pinnedSearchResults,
       customSearchEngines,
-      notionIntegrationSecret,
     );
+    document.dispatchEvent(new CustomEvent('nenya-options-imported'));
     showToast('Options imported successfully.', 'success');
   } catch (error) {
     console.warn('[importExport] Import failed:', error);

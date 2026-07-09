@@ -20,7 +20,7 @@ The Dark Mode section in `src/options/index.html` is responsible for capturing p
 
 #### Scenario: Reflect sync updates and popup prefill
 
-- **GIVEN** another tab (or Automerge restore) mutates `darkModeRules`,
+- **GIVEN** another tab or JSON import mutates `darkModeRules`,
 - **THEN** the options page listener on `chrome.storage.onChanged` MUST re-render unless `syncing` is true.
 - **GIVEN** the popup invokes the 🌘 shortcut,
 - **WHEN** `handleDarkMode()` opens `src/options/index.html#dark-mode-heading&url=<encoded>`,

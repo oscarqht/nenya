@@ -35,26 +35,22 @@ Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.n
   - Encrypt & Save to Raindrop Unsorted via password-protected links
   - Mirror Raindrop collections as browser bookmarks
   - Automatic background synchronization
-- **Backup & Restore:** Export and import all your extension settings with conflict-free (Automerge) sync across browsers
-- **Notion Integration:** Add a Notion integration secret so popup search can surface shared Notion pages and databases alongside Raindrop results
+- **JSON Import/Export:** Export and import extension settings as local JSON files
 
 ### 🖥️ Advanced Tab Features
 
 - **Auto Reload:** Automatically reload specific pages based on URL patterns and intervals
-- **Bookmark Search:** Fast popup search across Raindrop and shared Notion content with keyboard navigation
+- **Bookmark Search:** Fast popup search across Raindrop content with keyboard navigation
 - **Custom Search Engines:** Add your own search shortcuts (`keyword + query`) directly from options
 
-### 🤖 AI/LLM Integration
+### 📄 Page Content Export
 
-- **Chat with LLM:** Send page content directly to ChatGPT, Claude, Gemini, or Perplexity
-- **Custom LLM Prompts:** Create and manage reusable prompts for AI interactions
 - **Page Content Extraction:**
   - General web pages (using Readability)
   - YouTube videos (title, description, transcript)
   - Notion pages (full content extraction)
   - Confluence pages (page-aware scraping with preserved lists, tables, code, and images)
 - **Download as Markdown:** Export page content as markdown files, including Confluence-aware markdown conversion
-- **Screenshot Integration:** Automatically attach screenshots when sending to LLM
 
 ### 📋 Clipboard Tools
 
@@ -68,9 +64,6 @@ Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.n
 
 ### ✨ Content Enhancement
 
-- **Bright Mode:** Force light/bright mode on any website (override dark themes)
-- **Dark Mode:** Force dark mode rendering on websites when needed
-- **Element Blocker:** Visual element picker to permanently hide distracting page elements (instant apply—no refresh needed)
 - **Custom JavaScript:** Inject custom JS code into specific websites
 - **Custom CSS:** Inject custom CSS styles into specific websites
 - **YouTube Enhancements:** Special optimizations and fixes for YouTube

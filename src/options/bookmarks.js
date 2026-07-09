@@ -1,7 +1,5 @@
 /* global chrome */
 
-import { setBackupConnectionState, refreshBackupStatus } from './backup.js';
-import { OPTIONS_BACKUP_MESSAGES } from '../shared/optionsBackupMessages.js';
 import { getValidTokens, areTokensExpired } from '../shared/tokenRefresh.js';
 
 /**
@@ -205,25 +203,6 @@ function showToast(message, variant = 'info') {
     .showToast();
 }
 
-/**
- * Send a runtime message to the background script.
- * @template T
- * @param {any} payload
- * @returns {Promise<T>}
- */
-function sendRuntimeMessage(payload) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(payload, (response) => {
-      const error = chrome.runtime.lastError;
-      if (error) {
-        reject(new Error(error.message));
-        return;
-      }
-      resolve(response);
-    });
-  });
-}
-
 /** @type {boolean} */
 let isRefreshingTokens = false;
 
@@ -417,8 +396,6 @@ async function handleDisconnectClick() {
 
 
     renderProviderState();
-    setBackupConnectionState(false);
-    await refreshBackupStatus();
     showToast(
       'Disconnected from ' +
         currentProvider.name +
@@ -459,32 +436,7 @@ async function processOAuthSuccess(message) {
     renderProviderState();
   }
 
-  setBackupConnectionState(true);
   showToast('Connected to ' + provider.name + '.', 'success');
-
-  try {
-    await sendRuntimeMessage({
-      type: OPTIONS_BACKUP_MESSAGES.SYNC_AFTER_LOGIN,
-    });
-  } catch (error) {
-    console.warn(
-      '[bookmarks] Failed to restore options after login:',
-      error instanceof Error ? error.message : error,
-    );
-  }
-
-  await refreshBackupStatus();
-
-  try {
-    await sendRuntimeMessage({
-      type: 'mirror:ensureSessionsCollection',
-    });
-  } catch (error) {
-    console.warn(
-      '[bookmarks] Failed to initialize synced browser sessions after login:',
-      error instanceof Error ? error.message : error,
-    );
-  }
 }
 
 /**

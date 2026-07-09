@@ -26,23 +26,20 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
 ✓ Encrypt & save to Raindrop Unsorted with password-protected links
 ✓ Mirror Raindrop collections as bookmarks
 ✓ Automatic background synchronization
-• Backup & restore all extension settings with conflict-free Automerge sync
+• Export and import extension settings as local JSON files
 
 🖥️ Advanced Tab Features
 • Auto Reload: Automatically reload pages based on URL patterns
-• Bookmark Search: Fast search with keyboard navigation
+• Bookmark Search: Fast Raindrop search with keyboard navigation
 • Custom Search Engines: Add your own keyword + query search shortcuts
 
-🤖 AI/LLM Integration
-• Chat with LLM: Send content to ChatGPT, Claude, Gemini, or Perplexity
-• Custom reusable prompts for AI interactions
+📄 Page Content Export
 • Smart content extraction:
 ✓ General web pages (Readability)
 ✓ YouTube (title, description, transcript)
 ✓ Notion pages (full content)
 ✓ Confluence pages (page-aware markdown conversion)
 • Download pages as markdown files, including Confluence-aware exports
-• Automatic screenshot attachment for visual context
 
 📋 Clipboard Tools
 • Copy page title
@@ -54,9 +51,6 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
 • Save clipboard URLs directly to Raindrop Unsorted
 
 ✨ Content Enhancement
-• Bright Mode: Force light mode on any website
-• Dark Mode: Force dark mode rendering on websites when needed
-• Element Blocker: Visual picker to hide distracting elements (instant apply)
 • Custom JavaScript: Inject JS code into specific sites
 • Custom CSS: Inject custom styles into specific sites
 • YouTube Enhancements: Special optimizations for YouTube
@@ -86,7 +80,7 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
   Required for Raindrop.io integration to mirror collections and items as browser bookmarks. The extension creates, updates, and manages bookmark folders to sync with your Raindrop account. Also enables the built-in bookmark search functionality allowing seamless cross-platform bookmark management.
 
 - **storage**:
-  Essential for saving user settings and preferences. Uses both `chrome.storage.sync` for cross-device synchronization of settings (shortcuts, rules, configurations) and `chrome.storage.local` for tab snapshots and LLM prompts that don't need to sync.
+  Essential for saving user settings and preferences. Uses both `chrome.storage.sync` for cross-device synchronization of settings (shortcuts, rules, configurations) and `chrome.storage.local` for tab snapshots and runtime data that don't need to sync.
 
 - **tabs**:
   Core functionality for tab management - creates, queries, updates, and manages browser tabs. Enables features like tab switching, screenshots, content capture, and auto-reload.
@@ -95,7 +89,7 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
   Used in conjunction with tab management to organize related tabs into groups for user workflows such as context-menu actions and split-tab operations.
 
 - **notifications**:
-  Provides user feedback for important actions like successful Raindrop synchronization, backup completion, auto-reload events, auto-login notifications, and error states. Keeps users informed about background operations without interrupting their browsing.
+  Provides user feedback for important actions like successful Raindrop synchronization, JSON import/export completion, auto-reload events, auto-login notifications, and error states. Keeps users informed about background operations without interrupting their browsing.
 
 - **contextMenus**:
   Adds right-click menu options for quick access to extension features including clipboard tools (copy title/URL, screenshots) and Raindrop save actions. Provides convenient access to frequently used features.
@@ -104,20 +98,17 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
   Enables scheduled background tasks including automatic Raindrop synchronization at regular intervals, and auto-reload functionality for specific tabs based on user-defined URL patterns and time intervals.
 
 - **scripting**:
-  Required for content script injection to implement features like element blocking, custom CSS/JS injection, video controls, picture-in-picture, bright mode, and LLM page content extraction across all websites.
+  Required for content script injection to implement features like custom CSS/JS injection, video controls, picture-in-picture, auto Google login, and Markdown page content extraction across all websites.
 
 - **activeTab**:
-  Allows the extension to interact with the currently active tab for features like video controls, element picker, bright mode toggle, and clipboard operations without requiring broad host permissions. Used for popup-triggered actions on the current tab.
+  Allows the extension to interact with the currently active tab for features like video controls, Markdown download, screenshots, and clipboard operations without requiring broad host permissions. Used for popup-triggered actions on the current tab.
 
 - **clipboardWrite**:
   Enables copying various content to clipboard including page titles, URLs (various formats), markdown links, and screenshots. Essential for the extension's productivity and sharing features.
-
-- **declarativeNetRequest**:
-  Used for implementing content filtering and blocking rules through the visual element picker interface.
 
 - **webNavigation**:
   Required for monitoring page navigation events to implement features such as auto-reload functionality based on URL patterns and URL processing rules that transform URLs when opening in new tabs.
 
 - **host permissions** (`<all_urls>`, `https://api.raindrop.io/*`):
-  - `<all_urls>`: Required for content script injection across all websites to provide universal features like element blocking, custom styling (CSS), custom code (JS), video controls, bright mode, auto Google login, and LLM page content extraction.
+  - `<all_urls>`: Required for content script injection across all websites to provide universal features like custom styling (CSS), custom code (JS), video controls, auto Google login, and Markdown page content extraction.
   - `https://api.raindrop.io/*`: Essential for Raindrop.io integration to sync bookmarks, collections, and user data with the cloud service. Used for pulling collections, pushing new bookmarks, and maintaining two-way synchronization.

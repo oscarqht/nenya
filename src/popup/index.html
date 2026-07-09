@@ -46,18 +46,18 @@
             role="listbox" aria-label="Custom search engines">
           </div>
         </div>
-        <div id="pinnedItemsContainer" class="flex flex-wrap gap-2 mt-2 empty:mt-0"></div>
+        <section id="favoritesSection" class="hidden" aria-labelledby="favoritesHeading">
+          <h2 id="favoritesHeading" class="text-[10px] font-bold text-base-content/50 uppercase tracking-wider mt-2">
+            Favorites
+          </h2>
+          <div id="favoritesLoading" class="favorites-loading hidden" role="status" aria-live="polite">
+            <span class="favorites-loading-spinner" aria-hidden="true"></span>
+            <span>Loading favorites...</span>
+          </div>
+          <div id="favoritesContainer" class="flex flex-wrap gap-2 mt-2 empty:mt-0"></div>
+        </section>
         <div id="bookmarksSearchResults" class="space-y-2" role="list"></div>
       </div>
-    </article>
-
-    <!-- sessions section -->
-    <article id="sessionsSection" class="w-full p-4 bg-base-100 hidden nenya-soft-surface" aria-labelledby="sessions-heading">
-      <div class="flex items-center justify-between mb-2">
-        <h2 id="sessions-heading" class="text-xs font-bold text-base-content/50 uppercase tracking-wider">Sessions</h2>
-        <span id="sessionsLoadingIndicator" class="text-[10px] text-base-content/40 hidden italic">loading...</span>
-      </div>
-      <div id="sessionsList" class="space-y-2" role="list"></div>
     </article>
 
   </main>
@@ -101,72 +101,6 @@
       <div class="modal-action">
         <button id="saveToUnsortedCancelButton" class="btn">Cancel</button>
         <button id="saveToUnsortedConfirmButton" class="btn btn-primary">Save</button>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- Edit Session Name Modal -->
-  <dialog id="editSessionNameModal" class="modal">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg">Edit Session Name</h3>
-      <div class="py-4 space-y-4">
-        <div>
-          <label class="label">
-            <span class="label-text">New Name</span>
-          </label>
-          <input id="editSessionNameInput" type="text" placeholder="Enter new session name"
-            class="input input-bordered w-full mt-2" autofocus />
-        </div>
-        <div>
-          <label class="label">
-            <span class="label-text">Icon (optional)</span>
-          </label>
-          <div id="editSessionIconPicker" class="flex flex-wrap gap-1 mt-2">
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="" title="No icon">
-              <span class="text-base-content/50">None</span>
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-chrome.png" title="Chrome">
-              <img src="../../assets/browser-icons/browser-chrome.png" alt="Chrome" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-edge.png" title="Edge">
-              <img src="../../assets/browser-icons/browser-edge.png" alt="Edge" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-brave.png" title="Brave">
-              <img src="../../assets/browser-icons/browser-brave.png" alt="Brave" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-vivaldi.png" title="Vivaldi">
-              <img src="../../assets/browser-icons/browser-vivaldi.png" alt="Vivaldi" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-comet.png" title="Comet">
-              <img src="../../assets/browser-icons/browser-comet.png" alt="Comet" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-chatgpt.png" title="ChatGPT">
-              <img src="../../assets/browser-icons/browser-chatgpt.png" alt="ChatGPT" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-arc.png" title="Arc">
-              <img src="../../assets/browser-icons/browser-arc.png" alt="Arc" class="w-6 h-6" />
-            </button>
-            <button type="button" class="icon-option btn btn-square btn-ghost btn-sm" data-icon="browser-dia.png" title="Dia">
-              <img src="../../assets/browser-icons/browser-dia.png" alt="Dia" class="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="modal-action">
-        <button id="editSessionNameCancelButton" class="btn">Cancel</button>
-        <button id="editSessionNameConfirmButton" class="btn btn-primary">Save</button>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- Delete Session Modal -->
-  <dialog id="deleteSessionModal" class="modal">
-    <div class="modal-box">
-      <h3 class="font-bold text-lg">Delete Session</h3>
-      <p class="py-4">Are you sure you want to delete the session "<span id="deleteSessionNameDisplay" class="font-semibold"></span>"? This action cannot be undone.</p>
-      <div class="modal-action">
-        <button id="deleteSessionCancelButton" class="btn">Cancel</button>
-        <button id="deleteSessionConfirmButton" class="btn btn-error">Delete</button>
       </div>
     </div>
   </dialog>

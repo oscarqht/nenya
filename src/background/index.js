@@ -6,28 +6,10 @@ import {
   handleRaindropSearch,
   handleOpenAllItemsInCollection,
   handleUpdateRaindropUrl,
-  ensureNenyaSessionsCollection,
-  handleFetchSessions,
-  handleFetchSessionDetails,
-  handleRestoreSession,
-  ensureDeviceCollectionAndExport,
-  handleSessionExportAlarm,
-  handleUpdateSessionName,
-  handleDeleteSession,
-  handleUploadCollectionCover,
-  handleSetCurrentSessionIconPreference,
+  handleGetRaindropFavorites,
+  handleSetRaindropFavorite,
 } from './mirror.js';
-import {
-  searchNotion,
-  validateNotionSecret,
-} from './notion.js';
 
-import {
-  initializeOptionsBackupService,
-  handleOptionsBackupMessage,
-  runAutomaticRestore,
-  runStartupSync,
-} from './options-backup.js';
 import {
   initializeAutoReloadFeature,
   handleAutoReloadAlarm,
@@ -55,15 +37,8 @@ import {
   isCopyMenuItem,
   isRaindropMenuItem,
   parseRunCodeMenuItem,
-  parseLLMMenuItem,
   getCopyFormatType,
 } from '../shared/contextMenus.js';
-import { initializeTabSnapshots } from './tab-snapshots.js';
-import {
-  LLM_PROVIDER_META,
-  isLLMPage,
-  getLLMProviderFromURL,
-} from '../shared/llmProviders.js';
 import {
   handleScreenRecordingToggle,
   handleActionClickDuringRecording,
@@ -80,38 +55,269 @@ const SHOW_SAVE_TO_UNSORTED_DIALOG_MESSAGE =
   'showSaveToUnsortedDialog';
 const GET_CURRENT_TAB_ID_MESSAGE = 'getCurrentTabId';
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
-const NOTION_SEARCH_MESSAGE = 'notion:search';
-const VALIDATE_NOTION_SECRET_MESSAGE = 'notion:validateSecret';
-const FETCH_SESSIONS_MESSAGE = 'mirror:fetchSessions';
-const FETCH_SESSION_DETAILS_MESSAGE = 'mirror:fetchSessionDetails';
-const RESTORE_SESSION_MESSAGE = 'mirror:restoreSession';
-const RESTORE_WINDOW_MESSAGE = 'mirror:restoreWindow';
-const RESTORE_GROUP_MESSAGE = 'mirror:restoreGroup';
-const RESTORE_TAB_MESSAGE = 'mirror:restoreTab';
 const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
-const SAVE_SESSION_MESSAGE = 'mirror:saveSession';
-const UPDATE_SESSION_NAME_MESSAGE = 'mirror:updateSessionName';
-const DELETE_SESSION_MESSAGE = 'mirror:deleteSession';
-const SET_CURRENT_SESSION_ICON_PREFERENCE_MESSAGE =
-  'mirror:setCurrentSessionIconPreference';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
+const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
+const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
+const RUN_CODE_BACKGROUND_FETCH_MESSAGE = 'runCodeInPage:backgroundFetch';
 const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
-const COLLECT_AND_SEND_TO_LLM_MESSAGE = 'collect-and-send-to-llm';
-const OPEN_LLM_TABS_MESSAGE = 'open-llm-tabs';
-const CLOSE_LLM_TABS_MESSAGE = 'close-llm-tabs';
-const SWITCH_LLM_PROVIDER_MESSAGE = 'switch-llm-provider';
-const TAB_CONTENT_MODE_PAGE = 'page-content';
-const TAB_CONTENT_MODE_HTML = 'html-source';
 const ENCRYPT_SERVICE_URL = 'https://oh-auth.vercel.app/secret/encrypt';
 const ENCRYPT_COVER_URL = 'https://picsum.photos/640/360';
-const SESSION_EXPORT_ALARM_NAME = 'nenya-session-export';
+const RUN_CODE_BACKGROUND_FETCH_HELPER_NAME = 'nenyaFetch';
+const RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR =
+  'Nenya background fetch is unavailable. Reload the extension and confirm "Allow User Scripts" is enabled.';
+const ALLOWED_BACKGROUND_FETCH_INIT_KEYS = new Set([
+  'body',
+  'cache',
+  'credentials',
+  'headers',
+  'integrity',
+  'keepalive',
+  'method',
+  'redirect',
+  'referrer',
+  'referrerPolicy',
+]);
+const ALLOWED_BACKGROUND_FETCH_CREDENTIALS = new Set([
+  'include',
+  'omit',
+  'same-origin',
+]);
+const ALLOWED_BACKGROUND_FETCH_CACHE = new Set([
+  'default',
+  'force-cache',
+  'no-cache',
+  'no-store',
+  'only-if-cached',
+  'reload',
+]);
+const ALLOWED_BACKGROUND_FETCH_REDIRECT = new Set([
+  'error',
+  'follow',
+  'manual',
+]);
+const ALLOWED_BACKGROUND_FETCH_REFERRER_POLICY = new Set([
+  '',
+  'no-referrer',
+  'no-referrer-when-downgrade',
+  'origin',
+  'origin-when-cross-origin',
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
+  'unsafe-url',
+]);
 
 /**
  * @typedef {'page-content' | 'html-source'} TabContentMode
  */
+
+/**
+ * @typedef {{
+ *   url: string,
+ *   init?: {
+ *     method?: string,
+ *     headers?: Array<[string, string]>,
+ *     body?: { kind: 'text' | 'bytes', value: string | number[] } | null,
+ *     credentials?: RequestCredentials,
+ *     cache?: RequestCache,
+ *     redirect?: RequestRedirect,
+ *     referrer?: string,
+ *     referrerPolicy?: ReferrerPolicy | '',
+ *     integrity?: string,
+ *     keepalive?: boolean,
+ *   },
+ * }} RunCodeBackgroundFetchMessage
+ */
+
+/**
+ * Create helper code that is prepended to manual Run Code snippets.
+ * @param {boolean} backgroundFetchAvailable
+ * @returns {string}
+ */
+function buildRunCodeHelperPrelude(backgroundFetchAvailable) {
+  return [
+    `const __nenyaBackgroundFetchMessageType = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_MESSAGE,
+    )};`,
+    `const __nenyaBackgroundFetchHelperName = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_HELPER_NAME,
+    )};`,
+    `const __nenyaBackgroundFetchSetupError = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR,
+    )};`,
+    `const __nenyaBackgroundFetchEnabled = ${
+      backgroundFetchAvailable ? 'true' : 'false'
+    };`,
+    'async function __nenyaSerializeFetchBody(body) {',
+    '  if (body == null) {',
+    '    return null;',
+    '  }',
+    '  if (typeof body === \'string\') {',
+    '    return { kind: \'text\', value: body };',
+    '  }',
+    '  if (body instanceof URLSearchParams) {',
+    '    return { kind: \'text\', value: body.toString() };',
+    '  }',
+    '  if (body instanceof ArrayBuffer) {',
+    '    return { kind: \'bytes\', value: Array.from(new Uint8Array(body)) };',
+    '  }',
+    '  if (ArrayBuffer.isView(body)) {',
+    '    return {',
+    '      kind: \'bytes\',',
+    '      value: Array.from(',
+    '        new Uint8Array(body.buffer, body.byteOffset, body.byteLength),',
+    '      ),',
+    '    };',
+    '  }',
+    '  if (typeof Blob !== \'undefined\' && body instanceof Blob) {',
+    '    const bytes = new Uint8Array(await body.arrayBuffer());',
+    '    return { kind: \'bytes\', value: Array.from(bytes) };',
+    '  }',
+    '  throw new Error(',
+    '    \'Nenya background fetch only supports body values that are strings, URLSearchParams, Blob, ArrayBuffer, or typed arrays.\',',
+    '  );',
+    '}',
+    'function __nenyaSerializeFetchHeaders(headers) {',
+    '  if (headers == null) {',
+    '    return undefined;',
+    '  }',
+    '  if (typeof Headers !== \'undefined\' && headers instanceof Headers) {',
+    '    return Array.from(headers.entries()).map(([key, value]) => [',
+    '      String(key),',
+    '      String(value),',
+    '    ]);',
+    '  }',
+    '  if (Array.isArray(headers)) {',
+    '    return headers.map((entry) => {',
+    '      if (!Array.isArray(entry) || entry.length !== 2) {',
+    '        throw new Error(',
+    '          \'Nenya background fetch headers must be [name, value] pairs.\',',
+    '        );',
+    '      }',
+    '      return [String(entry[0]), String(entry[1])];',
+    '    });',
+    '  }',
+    '  if (headers && typeof headers === \'object\') {',
+    '    return Object.entries(headers).map(([key, value]) => [',
+    '      String(key),',
+    '      String(value),',
+    '    ]);',
+    '  }',
+    '  throw new Error(',
+    '    \'Nenya background fetch headers must be a Headers instance, an array of pairs, or an object.\',',
+    '  );',
+    '}',
+    'async function __nenyaNormalizeFetchInit(init) {',
+    '  if (init == null) {',
+    '    return {};',
+    '  }',
+    '  if (typeof init !== \'object\' || Array.isArray(init)) {',
+    '    throw new Error(',
+    '      \'Nenya background fetch init must be an object when provided.\',',
+    '    );',
+    '  }',
+    '  const next = {};',
+    '  if (init.method != null) {',
+    '    next.method = String(init.method);',
+    '  }',
+    '  if (init.headers !== undefined) {',
+    '    next.headers = __nenyaSerializeFetchHeaders(init.headers);',
+    '  }',
+    '  if (Object.prototype.hasOwnProperty.call(init, \'body\')) {',
+    '    next.body = await __nenyaSerializeFetchBody(init.body);',
+    '  }',
+    '  if (init.credentials != null) {',
+    '    next.credentials = String(init.credentials);',
+    '  }',
+    '  if (init.cache != null) {',
+    '    next.cache = String(init.cache);',
+    '  }',
+    '  if (init.redirect != null) {',
+    '    next.redirect = String(init.redirect);',
+    '  }',
+    '  if (init.referrer != null) {',
+    '    next.referrer = String(init.referrer);',
+    '  }',
+    '  if (init.referrerPolicy != null) {',
+    '    next.referrerPolicy = String(init.referrerPolicy);',
+    '  }',
+    '  if (init.integrity != null) {',
+    '    next.integrity = String(init.integrity);',
+    '  }',
+    '  if (init.keepalive != null) {',
+    '    next.keepalive = Boolean(init.keepalive);',
+    '  }',
+    '  return next;',
+    '}',
+    'function __nenyaBuildFetchResponse(payload) {',
+    '  const bodyText = typeof payload?.bodyText === \'string\' ? payload.bodyText : \'\';',
+    '  const headers = new Headers(',
+    '    payload?.headers && typeof payload.headers === \'object\'',
+    '      ? payload.headers',
+    '      : {},',
+    '  );',
+    '  return {',
+    '    ok: Boolean(payload?.ok),',
+    '    status: Number.isFinite(payload?.status) ? payload.status : 0,',
+    '    statusText:',
+    '      typeof payload?.statusText === \'string\' ? payload.statusText : \'\',',
+    '    url: typeof payload?.url === \'string\' ? payload.url : \'\',',
+    '    redirected: Boolean(payload?.redirected),',
+    '    headers,',
+    '    text() {',
+    '      return Promise.resolve(bodyText);',
+    '    },',
+    '    json() {',
+    '      return Promise.resolve().then(() => JSON.parse(bodyText));',
+    '    },',
+    '    clone() {',
+    '      return __nenyaBuildFetchResponse(payload);',
+    '    },',
+    '  };',
+    '}',
+    'globalThis[__nenyaBackgroundFetchHelperName] = async function nenyaFetch(',
+    '  input,',
+    '  init,',
+    ') {',
+    '  if (!__nenyaBackgroundFetchEnabled) {',
+    '    throw new Error(__nenyaBackgroundFetchSetupError);',
+    '  }',
+    '  const url =',
+    '    input instanceof URL',
+    '      ? input.toString()',
+    '      : typeof input === \'string\'',
+    '        ? input',
+    '        : input && typeof input.url === \'string\'',
+    '          ? input.url',
+    '          : \'\';',
+    '  if (!url) {',
+    '    throw new Error(',
+    '      \'Nenya background fetch requires an absolute URL string or URL object.\',',
+    '    );',
+    '  }',
+    '  if (!chrome?.runtime?.sendMessage) {',
+    '    throw new Error(__nenyaBackgroundFetchSetupError);',
+    '  }',
+    '  const response = await chrome.runtime.sendMessage({',
+    '    type: __nenyaBackgroundFetchMessageType,',
+    '    url,',
+    '    init: await __nenyaNormalizeFetchInit(init),',
+    '  });',
+    '  if (!response || response.ok !== true) {',
+    '    throw new Error(',
+    '      response && typeof response.error === \'string\'',
+    '        ? response.error',
+    '        : \'Nenya background fetch failed.\',',
+    '    );',
+    '  }',
+    '  return __nenyaBuildFetchResponse(response.response);',
+    '};',
+  ].join('\n');
+}
 
 /**
  * Build a user-authored JavaScript payload that catches runtime errors while
@@ -119,11 +325,18 @@ const SESSION_EXPORT_ALARM_NAME = 'nenya-session-export';
  * @param {string} code
  * @param {string} consoleLabel
  * @param {string} sourceName
+ * @param {boolean} backgroundFetchAvailable
  * @returns {string}
  */
-function buildUserScriptCode(code, consoleLabel, sourceName) {
+function buildUserScriptCode(
+  code,
+  consoleLabel,
+  sourceName,
+  backgroundFetchAvailable,
+) {
   return [
     '(async function() {',
+    buildRunCodeHelperPrelude(backgroundFetchAvailable),
     '  try {',
     code,
     '  } catch (error) {',
@@ -142,6 +355,26 @@ function buildUserScriptCode(code, consoleLabel, sourceName) {
  */
 function sanitizeSourceName(value) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '-');
+}
+
+/**
+ * Enable user-script messaging for manual Run Code when the Chrome runtime
+ * supports it. Snippets still run without the helper if this step is unavailable.
+ * @param {typeof chrome.userScripts} userScripts
+ * @returns {Promise<boolean>}
+ */
+async function configureManualUserScriptWorld(userScripts) {
+  if (!userScripts || typeof userScripts.configureWorld !== 'function') {
+    return false;
+  }
+
+  try {
+    await userScripts.configureWorld({ messaging: true });
+    return true;
+  } catch (error) {
+    console.warn('[runCode] Failed to enable user-script messaging:', error);
+    return false;
+  }
 }
 
 /**
@@ -166,13 +399,20 @@ async function executeManualUserCode(tabId, code, consoleLabel, sourceName) {
   }
 
   try {
+    const backgroundFetchAvailable =
+      await configureManualUserScriptWorld(userScripts);
     await userScripts.execute({
       target: { tabId },
       world: 'USER_SCRIPT',
       injectImmediately: true,
       js: [
         {
-          code: buildUserScriptCode(code, consoleLabel, sourceName),
+          code: buildUserScriptCode(
+            code,
+            consoleLabel,
+            sourceName,
+            backgroundFetchAvailable,
+          ),
         },
       ],
     });
@@ -388,46 +628,7 @@ chrome.commands.onCommand.addListener((command) => {
     return;
   }
 
-  if (command === 'block-element-picker') {
-    void (async () => {
-      try {
-        // Get the current active tab
-        const tabs = await chrome.tabs.query({
-          currentWindow: true,
-          active: true,
-        });
-        const currentTab = tabs && tabs[0];
-        if (!currentTab || !currentTab.id) {
-          console.warn('[commands] No active tab found for element picker');
-          return;
-        }
-
-        // Launch the element picker
-        await launchElementPicker(currentTab.id);
-      } catch (error) {
-        console.warn('[commands] Element picker failed:', error);
-      }
-    })();
-    return;
-  }
-
-  if (command === 'llm-chat-with-llm') {
-    void (async () => {
-      try {
-        // Set a flag in storage to indicate we should navigate to chat page
-        await chrome.storage.local.set({ openChatPage: true });
-
-        // Open the extension popup (this will trigger the popup to open)
-        // The popup will check the flag and navigate to chat.html
-        await chrome.action.openPopup();
-      } catch (error) {
-        console.warn('[commands] Chat with LLM failed:', error);
-      }
-    })();
-    return;
-  }
-
-  if (command === 'llm-download-markdown') {
+  if (command === 'download-markdown') {
     void (async () => {
       try {
         await handleMarkdownDownload();
@@ -1130,23 +1331,15 @@ async function handleEncryptAndSave(options) {
 }
 /**
  * Handle one-time initialization tasks.
- * @param {string} trigger
  * @returns {void}
  */
-function handleLifecycleEvent(trigger) {
+function handleLifecycleEvent() {
   setupCentralizedContextMenus();
   setupClipboardContextMenus();
-  initializeTabSnapshots();
-  void ensureNenyaSessionsCollection();
-  void initializeOptionsBackupService();
-  void runStartupSync();
-  chrome.alarms.create('options-backup-check', {
-    periodInMinutes: 1,
-  });
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  handleLifecycleEvent('install');
+  handleLifecycleEvent();
 
   // Perform one-time migrations on install or update
   if (details.reason === 'install' || details.reason === 'update') {
@@ -1175,8 +1368,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
     const contentScripts = [
       [
-        'src/contentScript/bright-mode.js',
-        'src/contentScript/block-elements.js',
         'src/contentScript/custom-js-css.js',
       ],
     ];
@@ -1222,13 +1413,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  handleLifecycleEvent('startup');
+  handleLifecycleEvent();
   void pruneClosedPersistedRenamedTabs();
 });
 
-// Ensure backup and synced session services are initialized immediately when service worker starts
-initializeOptionsBackupService();
-void ensureNenyaSessionsCollection();
 
 void initializeAutoReloadFeature().catch((error) => {
   console.error('[auto-reload] Initialization failed:', error);
@@ -1298,15 +1486,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  void (async () => {
-    if (alarm.name === 'options-backup-check') {
-      await runAutomaticRestore();
-    } else if (alarm.name === SESSION_EXPORT_ALARM_NAME) {
-      await handleSessionExportAlarm();
-    } else {
-      await handleAutoReloadAlarm(alarm);
-    }
-  })();
+  void handleAutoReloadAlarm(alarm);
 });
 
 // ============================================================================
@@ -1471,1043 +1651,6 @@ async function collectPageContentFromTabs(tabIds) {
 }
 
 /**
- * Parse incoming tab content mode payload into a typed map.
- * @param {unknown} rawTabContentModes
- * @returns {Map<number, TabContentMode>}
- */
-function parseTabContentModes(rawTabContentModes) {
-  /** @type {Map<number, TabContentMode>} */
-  const modes = new Map();
-  if (!rawTabContentModes || typeof rawTabContentModes !== 'object') {
-    return modes;
-  }
-
-  for (const [tabIdRaw, modeRaw] of Object.entries(rawTabContentModes)) {
-    const tabId = Number.parseInt(tabIdRaw, 10);
-    if (!Number.isInteger(tabId)) {
-      continue;
-    }
-    if (modeRaw === TAB_CONTENT_MODE_HTML || modeRaw === TAB_CONTENT_MODE_PAGE) {
-      modes.set(tabId, modeRaw);
-    }
-  }
-
-  return modes;
-}
-
-/**
- * Collect sanitized HTML source code from a single tab.
- * @param {number} tabId
- * @returns {Promise<{tabId: number, title: string, url: string, content: string} | null>}
- */
-async function collectHtmlSourceFromTab(tabId) {
-  if (typeof tabId !== 'number') {
-    return null;
-  }
-
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const htmlRoot = document.documentElement;
-        const htmlClone = htmlRoot ? htmlRoot.cloneNode(true) : null;
-        const title = document.title || '';
-        const url = window.location.href || '';
-        if (!(htmlClone instanceof Element)) {
-          return {
-            title,
-            url,
-            content: '<content>\nno content\n</content>',
-          };
-        }
-
-        const head = htmlClone.querySelector('head');
-        if (head) {
-          head.remove();
-        }
-
-        htmlClone
-          .querySelectorAll('style, script, iframe, svg')
-          .forEach((el) => el.remove());
-
-        htmlClone.querySelectorAll('img[src]').forEach((img) => {
-          const src = img.getAttribute('src') || '';
-          if (/^\s*data:image\/[^;]+;base64,/i.test(src)) {
-            img.setAttribute('src', '<base64>');
-          }
-        });
-
-        const htmlSource = htmlClone.outerHTML || '';
-        return {
-          title,
-          url,
-          content: `<content>\n${htmlSource || 'no content'}\n</content>`,
-        };
-      },
-    });
-
-    const result = Array.isArray(results) && results[0] ? results[0].result : null;
-    if (!result || typeof result !== 'object') {
-      return {
-        tabId,
-        title: '',
-        url: '',
-        content: '(failed to collect html source)',
-      };
-    }
-
-    return {
-      tabId,
-      title: typeof result.title === 'string' ? result.title : '',
-      url: typeof result.url === 'string' ? result.url : '',
-      content:
-        typeof result.content === 'string'
-          ? result.content
-          : '(failed to collect html source)',
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(
-      `[background] Error collecting HTML source from tab ${tabId}:`,
-      error,
-    );
-    return {
-      tabId,
-      title: '',
-      url: '',
-      content: `(error collecting html source: ${message})`,
-    };
-  }
-}
-
-/**
- * Collect context for LLM send flow with per-tab content mode support.
- * @param {number[]} tabIds
- * @param {Map<number, TabContentMode>} tabContentModes
- * @returns {Promise<Array<{tabId: number, title: string, url: string, content: string}>>}
- */
-async function collectLLMContextFromTabs(tabIds, tabContentModes) {
-  const promises = tabIds.map(async (tabId) => {
-    if (typeof tabId !== 'number') {
-      return null;
-    }
-
-    const mode = tabContentModes.get(tabId) || TAB_CONTENT_MODE_PAGE;
-    if (mode === TAB_CONTENT_MODE_HTML) {
-      return (
-        (await collectHtmlSourceFromTab(tabId)) || {
-          tabId,
-          title: '',
-          url: '',
-          content: '(failed to collect html source)',
-        }
-      );
-    }
-
-    try {
-      const content = await collectPageContent(tabId);
-      return (
-        content || {
-          tabId,
-          title: '',
-          url: '',
-          content: '(failed to collect content)',
-        }
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(
-        `[background] Error collecting content from tab ${tabId}:`,
-        error,
-      );
-      return {
-        tabId,
-        title: '',
-        url: '',
-        content: `(error: ${message})`,
-      };
-    }
-  });
-
-  const results = await Promise.all(promises);
-  return results.filter(Boolean);
-}
-
-/**
- * Append collected source page URLs to the prompt that gets sent to LLM pages.
- * @param {string} promptContent
- * @param {Array<{url: string}>} contents
- * @returns {string}
- */
-function buildPromptWithSourceUrls(promptContent, contents) {
-  const basePrompt =
-    typeof promptContent === 'string' ? promptContent.trim() : '';
-  const sourceUrls = Array.from(
-    new Set(
-      (Array.isArray(contents) ? contents : [])
-        .map((item) => (typeof item?.url === 'string' ? item.url.trim() : ''))
-        .filter(Boolean),
-    ),
-  );
-
-  if (sourceUrls.length === 0) {
-    return basePrompt;
-  }
-
-  const sourceLine = `Source page${
-    sourceUrls.length === 1 ? ' URL' : ' URLs'
-  }: ${sourceUrls.join(' | ')}`;
-
-  const prefixedSourceLine = `\n\n${sourceLine}`;
-
-  if (!basePrompt) {
-    return prefixedSourceLine;
-  }
-
-  return `${basePrompt}${prefixedSourceLine}`;
-}
-
-// ============================================================================
-// LLM TAB MANAGEMENT
-// ============================================================================
-
-/** @type {number[]} */
-let llmTabIds = [];
-
-/** @type {Array<{tabId: number, title: string, url: string, content: string}>} */
-let collectedContents = [];
-
-/** @type {string | null} */
-let selectedPromptContent = null;
-
-/** @type {Array<{name: string, type: string, dataUrl: string}>} */
-let selectedLocalFiles = [];
-
-/**
- * Map of session IDs to their opened LLM tabs
- * @type {Map<string, Map<string, number>>}
- */
-const sessionToLLMTabs = new Map();
-
-/**
- * Map of chat page tab IDs to session IDs (for cleanup when tab is closed)
- * @type {Map<number, string>}
- */
-const tabIdToSessionId = new Map();
-
-/**
- * Track which sessions have sent content to LLM tabs (should not auto-close)
- * @type {Set<string>}
- */
-const sessionsWithSentContent = new Set();
-
-const LLM_SESSION_TABS_STORAGE_KEY = 'llmSessionTabs';
-
-let llmTabStateLoaded = false;
-
-/**
- * Serialize the in-memory LLM tab session map into a plain object for storage.
- * @returns {Object.<string, Object.<string, number>>}
- */
-function serializeLLMTabSessionMap() {
-  /** @type {Object.<string, Object.<string, number>>} */
-  const serialized = {};
-
-  for (const [sessionId, providerTabs] of sessionToLLMTabs.entries()) {
-    /** @type {Object.<string, number>} */
-    const providerToTabId = {};
-
-    for (const [providerId, tabId] of providerTabs.entries()) {
-      if (typeof tabId === 'number') {
-        providerToTabId[providerId] = tabId;
-      }
-    }
-
-    if (Object.keys(providerToTabId).length > 0) {
-      serialized[sessionId] = providerToTabId;
-    }
-  }
-
-  return serialized;
-}
-
-/**
- * Persist LLM tab session mapping so it survives MV3 service worker restarts.
- * @returns {Promise<void>}
- */
-async function persistLLMTabSessionMap() {
-  try {
-    if (!chrome.storage.session) {
-      return;
-    }
-
-    await chrome.storage.session.set({
-      [LLM_SESSION_TABS_STORAGE_KEY]: serializeLLMTabSessionMap(),
-    });
-  } catch (error) {
-    console.warn('[background] Failed to persist LLM tab session map:', error);
-  }
-}
-
-/**
- * Load LLM tab session mapping from storage once per service worker lifecycle.
- * @returns {Promise<void>}
- */
-async function ensureLLMTabSessionMapLoaded() {
-  if (llmTabStateLoaded) {
-    return;
-  }
-  llmTabStateLoaded = true;
-
-  try {
-    if (!chrome.storage.session) {
-      return;
-    }
-
-    const result = await chrome.storage.session.get(LLM_SESSION_TABS_STORAGE_KEY);
-    const storedSessionTabs = result[LLM_SESSION_TABS_STORAGE_KEY];
-    if (!storedSessionTabs || typeof storedSessionTabs !== 'object') {
-      return;
-    }
-
-    for (const [sessionId, storedProviderTabs] of Object.entries(
-      storedSessionTabs,
-    )) {
-      if (!storedProviderTabs || typeof storedProviderTabs !== 'object') {
-        continue;
-      }
-
-      const providerTabs = new Map();
-      for (const [providerId, tabId] of Object.entries(storedProviderTabs)) {
-        if (typeof tabId === 'number') {
-          providerTabs.set(providerId, tabId);
-        }
-      }
-
-      if (providerTabs.size > 0) {
-        sessionToLLMTabs.set(sessionId, providerTabs);
-      }
-    }
-  } catch (error) {
-    console.warn('[background] Failed to restore LLM tab session map:', error);
-  }
-}
-
-/**
- * Calculate sort priority for LLM tab recovery candidates.
- * Higher score means better candidate.
- * @param {chrome.tabs.Tab} tab
- * @param {number | null} activeWindowId
- * @returns {number}
- */
-function getLLMTabCandidateScore(tab, activeWindowId) {
-  let score = 0;
-  if (typeof activeWindowId === 'number' && tab.windowId === activeWindowId) {
-    score += 10;
-  }
-  if (tab.active) {
-    score += 3;
-  }
-  if (tab.pinned) {
-    score -= 1;
-  }
-  if (typeof tab.id === 'number') {
-    score += tab.id / 1000000;
-  }
-  return score;
-}
-
-/**
- * Recover a session mapping by binding selected providers to existing open LLM tabs.
- * This is used when in-memory state is missing after MV3 service worker restart.
- * @param {string} sessionId
- * @param {string[]} selectedLLMProviders
- * @returns {Promise<Map<string, number> | null>}
- */
-async function recoverSessionLLMTabs(sessionId, selectedLLMProviders) {
-  try {
-    const activeTabs = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    const activeWindowId =
-      activeTabs[0] && typeof activeTabs[0].windowId === 'number'
-        ? activeTabs[0].windowId
-        : null;
-
-    const allTabs = await chrome.tabs.query({});
-    /** @type {Map<string, chrome.tabs.Tab[]>} */
-    const tabsByProvider = new Map();
-
-    for (const tab of allTabs) {
-      if (typeof tab.id !== 'number' || typeof tab.url !== 'string') {
-        continue;
-      }
-
-      const providerId = getLLMProviderFromURL(tab.url);
-      if (!providerId) {
-        continue;
-      }
-
-      if (!tabsByProvider.has(providerId)) {
-        tabsByProvider.set(providerId, []);
-      }
-      const providerTabs = tabsByProvider.get(providerId);
-      if (providerTabs) {
-        providerTabs.push(tab);
-      }
-    }
-
-    for (const providerTabs of tabsByProvider.values()) {
-      providerTabs.sort((a, b) => {
-        return (
-          getLLMTabCandidateScore(b, activeWindowId) -
-          getLLMTabCandidateScore(a, activeWindowId)
-        );
-      });
-    }
-
-    const recoveredTabs = new Map();
-    const usedTabIds = new Set();
-
-    for (const providerId of selectedLLMProviders) {
-      const providerTabs = tabsByProvider.get(providerId) || [];
-      const candidateTab = providerTabs.find((tab) => {
-        return typeof tab.id === 'number' && !usedTabIds.has(tab.id);
-      });
-
-      if (candidateTab && typeof candidateTab.id === 'number') {
-        recoveredTabs.set(providerId, candidateTab.id);
-        usedTabIds.add(candidateTab.id);
-      }
-    }
-
-    if (recoveredTabs.size === 0) {
-      return null;
-    }
-
-    sessionToLLMTabs.set(sessionId, recoveredTabs);
-    await persistLLMTabSessionMap();
-    console.log('[background] Recovered LLM tabs for session:', sessionId);
-    return recoveredTabs;
-  } catch (error) {
-    console.warn('[background] Failed to recover LLM tabs for session:', error);
-    return null;
-  }
-}
-
-/**
- * Track when chat pages are closed to cleanup their LLM tabs
- */
-chrome.tabs.onRemoved.addListener((tabId) => {
-  void (async () => {
-    await ensureLLMTabSessionMapLoaded();
-
-    const sessionId = tabIdToSessionId.get(tabId);
-    if (sessionId) {
-      // Chat page tab was closed, cleanup its LLM tabs only if content wasn't sent
-      if (!sessionsWithSentContent.has(sessionId)) {
-        const llmTabs = sessionToLLMTabs.get(sessionId);
-        if (llmTabs) {
-          for (const llmTabId of llmTabs.values()) {
-            chrome.tabs.remove(llmTabId).catch(() => {
-              // Tab might already be closed
-            });
-          }
-        }
-        sessionToLLMTabs.delete(sessionId);
-        await persistLLMTabSessionMap();
-      } else {
-        // Clean up the sent content flag as it's no longer needed
-        sessionsWithSentContent.delete(sessionId);
-      }
-      tabIdToSessionId.delete(tabId);
-    }
-  })();
-});
-
-/**
- * Handle port connections from chat pages to detect when they close
- */
-chrome.runtime.onConnect.addListener((port) => {
-  // Check if this is a chat page connection
-  if (port.name && port.name.startsWith('chat-')) {
-    const sessionId = port.name.substring(5); // Remove 'chat-' prefix
-
-    port.onDisconnect.addListener(() => {
-      void (async () => {
-        await ensureLLMTabSessionMapLoaded();
-
-        // Only clean up LLM tabs if content hasn't been sent yet
-        // If content was sent, keep the LLM tabs open for the user to continue
-        if (!sessionsWithSentContent.has(sessionId)) {
-          const llmTabs = sessionToLLMTabs.get(sessionId);
-          if (llmTabs) {
-            for (const llmTabId of llmTabs.values()) {
-              chrome.tabs.remove(llmTabId).catch(() => {
-                // Tab might already be closed
-              });
-            }
-            sessionToLLMTabs.delete(sessionId);
-            await persistLLMTabSessionMap();
-          }
-        } else {
-          // Clean up the sent content flag as it's no longer needed
-          sessionsWithSentContent.delete(sessionId);
-        }
-
-        // Clean up tab ID mapping
-        for (const [tabId, sid] of tabIdToSessionId.entries()) {
-          if (sid === sessionId) {
-            tabIdToSessionId.delete(tabId);
-          }
-        }
-      })();
-    });
-  }
-});
-
-/**
- * Inject the LLM page injector content script and wait for tab to be ready
- * @param {number} tabId
- * @returns {Promise<boolean>}
- */
-async function injectLLMPageInjector(tabId) {
-  try {
-    // Wait for tab to be ready first
-    await waitForTabReady(tabId);
-
-    // Inject the script
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['src/contentScript/llmPageInjector.js'],
-    });
-
-    return true;
-  } catch (error) {
-    console.error('[background] Failed to inject LLM page injector:', error);
-    return false;
-  }
-}
-
-/**
- * Wait for a tab to be ready (complete loading)
- * @param {number} tabId
- * @param {number} timeout
- * @returns {Promise<boolean>}
- */
-async function waitForTabReady(tabId, timeout = 30000) {
-  return new Promise((resolve) => {
-    const checkTab = async () => {
-      try {
-        const tab = await chrome.tabs.get(tabId);
-        if (tab.status === 'complete') {
-          resolve(true);
-          return;
-        }
-      } catch (error) {
-        resolve(false);
-        return;
-      }
-    };
-
-    // Check immediately
-    void checkTab();
-
-    // Listen for tab updates
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        clearTimeout(timeoutId);
-        resolve(true);
-      }
-    };
-
-    chrome.tabs.onUpdated.addListener(listener);
-
-    // Timeout
-    const timeoutId = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve(false);
-    }, timeout);
-  });
-}
-
-/**
- * Open LLM provider tabs for the chat page (positioned right next to current tab)
- * @param {string} sessionId - The session ID for this chat session
- * @param {number | null} chatPageTabId - The tab ID of the chat page (if opened as tab)
- * @param {string[]} providers - Array of provider IDs to open
- * @param {number} currentTabIndex - The index of the current active tab
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function openLLMTabs(
-  sessionId,
-  chatPageTabId,
-  providers,
-  currentTabIndex,
-) {
-  try {
-    await ensureLLMTabSessionMapLoaded();
-
-    if (!sessionId) {
-      return { success: false, error: 'Session ID is required' };
-    }
-
-    if (!sessionToLLMTabs.has(sessionId)) {
-      sessionToLLMTabs.set(sessionId, new Map());
-    }
-
-    // Track tab ID to session ID mapping for cleanup
-    if (chatPageTabId !== null && typeof chatPageTabId === 'number') {
-      tabIdToSessionId.set(chatPageTabId, sessionId);
-    }
-
-    const llmTabsMap = sessionToLLMTabs.get(sessionId);
-    if (!llmTabsMap) {
-      return { success: false, error: 'Failed to create LLM tabs map' };
-    }
-
-    const insertIndex = currentTabIndex + 1;
-
-    // Open tabs for each provider and wait for them to be ready
-    const tabPromises = providers.map(async (providerId, i) => {
-      const meta = LLM_PROVIDER_META[providerId];
-      if (!meta) return;
-
-      // Check if we already have a tab for this provider
-      if (llmTabsMap.has(providerId)) {
-        const existingTabId = llmTabsMap.get(providerId);
-        if (typeof existingTabId === 'number') {
-          try {
-            await chrome.tabs.get(existingTabId);
-            return;
-          } catch (error) {
-            // Existing tab mapping is stale (tab was closed), recreate it.
-            llmTabsMap.delete(providerId);
-          }
-        } else {
-          llmTabsMap.delete(providerId);
-        }
-      }
-
-      // Create new tab positioned right next to current tab
-      const newTab = await chrome.tabs.create({
-        url: meta.url,
-        active: false,
-        index: insertIndex + i,
-      });
-
-      if (newTab.id) {
-        llmTabsMap.set(providerId, newTab.id);
-        // Wait for the tab to complete loading
-        await waitForTabReady(newTab.id);
-      }
-    });
-
-    await Promise.all(tabPromises);
-    await persistLLMTabSessionMap();
-
-    return { success: true };
-  } catch (error) {
-    console.error('[background] Failed to open LLM tabs:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Close LLM tabs associated with a chat session
- * @param {string} sessionId - The session ID for this chat session
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function closeLLMTabs(sessionId) {
-  try {
-    await ensureLLMTabSessionMapLoaded();
-
-    if (!sessionId) {
-      return { success: false, error: 'Session ID is required' };
-    }
-
-    const llmTabs = sessionToLLMTabs.get(sessionId);
-    if (llmTabs) {
-      for (const llmTabId of llmTabs.values()) {
-        await chrome.tabs.remove(llmTabId).catch(() => {
-          // Tab might already be closed
-        });
-      }
-      sessionToLLMTabs.delete(sessionId);
-      await persistLLMTabSessionMap();
-
-      // Clean up tab ID mapping
-      for (const [tabId, sid] of tabIdToSessionId.entries()) {
-        if (sid === sessionId) {
-          tabIdToSessionId.delete(tabId);
-        }
-      }
-    }
-
-    // Clean up sent content flag
-    sessionsWithSentContent.delete(sessionId);
-
-    return { success: true };
-  } catch (error) {
-    console.error('[background] Failed to close LLM tabs:', error);
-    return { success: true }; // Return success even on error to not block
-  }
-}
-
-/**
- * Switch an LLM provider by updating the tab URL
- * @param {string} sessionId - The session ID for this chat session
- * @param {string} oldProviderId - The provider to replace
- * @param {string} newProviderId - The new provider to load
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function switchLLMProvider(sessionId, oldProviderId, newProviderId) {
-  try {
-    await ensureLLMTabSessionMapLoaded();
-
-    if (!sessionId) {
-      return { success: false, error: 'Session ID is required' };
-    }
-
-    const llmTabs = sessionToLLMTabs.get(sessionId);
-    if (!llmTabs) {
-      return {
-        success: false,
-        error: 'No LLM tabs found for this chat session',
-      };
-    }
-
-    const oldTabId = llmTabs.get(oldProviderId);
-    if (!oldTabId) {
-      return { success: false, error: 'Old provider tab not found' };
-    }
-
-    const newMeta = LLM_PROVIDER_META[newProviderId];
-    if (!newMeta) {
-      return { success: false, error: 'Invalid new provider' };
-    }
-
-    // Update the tab to load the new provider URL
-    await chrome.tabs.update(oldTabId, { url: newMeta.url });
-
-    // Update the mapping
-    llmTabs.delete(oldProviderId);
-    llmTabs.set(newProviderId, oldTabId);
-    await persistLLMTabSessionMap();
-
-    return { success: true };
-  } catch (error) {
-    console.error('[background] Failed to switch LLM provider:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Reuse LLM tabs to send content and prompt
- * @param {string} sessionId - The session ID for this chat session
- * @param {string[]} selectedLLMProviders - Array of provider IDs to send to
- * @param {Array<{tabId: number, title: string, url: string, content: string}>} contents - Content to send
- * @returns {Promise<{success: boolean, error?: string}>}
- */
-async function reuseLLMTabs(sessionId, selectedLLMProviders, contents) {
-  try {
-    await ensureLLMTabSessionMapLoaded();
-
-    if (!sessionId) {
-      return { success: false, error: 'Session ID is required' };
-    }
-
-    // Mark this session as having sent content IMMEDIATELY (before anything else)
-    // This prevents auto-cleanup if the popup closes while we're processing
-    sessionsWithSentContent.add(sessionId);
-
-    let llmTabs = sessionToLLMTabs.get(sessionId);
-    if (!llmTabs) {
-      llmTabs = await recoverSessionLLMTabs(sessionId, selectedLLMProviders);
-    }
-    if (!llmTabs) {
-      sessionsWithSentContent.delete(sessionId); // Clean up if we're failing
-      return {
-        success: false,
-        error: 'No LLM tabs found for this chat session',
-      };
-    }
-
-    // Find the first valid tab and activate it immediately
-    let firstTabId = null;
-    for (const providerId of selectedLLMProviders) {
-      const tabId = llmTabs.get(providerId);
-      if (tabId) {
-        try {
-          await chrome.tabs.get(tabId);
-          firstTabId = tabId;
-          break;
-        } catch (error) {
-          // Tab was closed, continue searching
-          llmTabs.delete(providerId);
-        }
-      }
-    }
-
-    if (!firstTabId) {
-      llmTabs = await recoverSessionLLMTabs(sessionId, selectedLLMProviders);
-      if (llmTabs) {
-        for (const providerId of selectedLLMProviders) {
-          const recoveredTabId = llmTabs.get(providerId);
-          if (recoveredTabId) {
-            try {
-              await chrome.tabs.get(recoveredTabId);
-              firstTabId = recoveredTabId;
-              break;
-            } catch (error) {
-              llmTabs.delete(providerId);
-            }
-          }
-        }
-      }
-    }
-
-    if (!firstTabId) {
-      sessionsWithSentContent.delete(sessionId);
-      await persistLLMTabSessionMap();
-      return {
-        success: false,
-        error: 'No available LLM tabs found for this chat session',
-      };
-    }
-
-    // Activate the first tab immediately so user sees it right away
-    if (firstTabId) {
-      await chrome.tabs.update(firstTabId, { active: true });
-    }
-
-    // Process all tabs in parallel for better performance
-    const injectionPromises = selectedLLMProviders.map(async (providerId) => {
-      const tabId = llmTabs.get(providerId);
-      if (!tabId) return;
-
-      const meta = LLM_PROVIDER_META[providerId];
-      if (!meta) return;
-
-      // Check if tab still exists
-      try {
-        await chrome.tabs.get(tabId);
-      } catch (error) {
-        // Tab was closed, skip it
-        llmTabs.delete(providerId);
-        return;
-      }
-
-      // Inject the script and wait for it to be ready
-      const ok = await injectLLMPageInjector(tabId);
-      if (ok) {
-        // Small delay to ensure the content script is fully initialized
-        // and message listener is set up (50ms should be enough)
-        await new Promise((resolve) => setTimeout(resolve, 50));
-
-        await chrome.tabs.sendMessage(tabId, {
-          type: 'inject-llm-data',
-          tabs: contents,
-          promptContent: selectedPromptContent,
-          files: selectedLocalFiles,
-          sendButtonSelector: meta.sendButtonSelector || null,
-        });
-      }
-    });
-
-    // Wait for all injections to complete
-    await Promise.all(injectionPromises);
-    await persistLLMTabSessionMap();
-
-    return { success: true };
-  } catch (error) {
-    console.error('[background] Failed to reuse LLM tabs:', error);
-    // Remove from sent content tracking if we failed
-    sessionsWithSentContent.delete(sessionId);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Open or reuse LLM tabs and inject content
- * @param {chrome.tabs.Tab} currentTab
- * @param {string[]} selectedLLMProviders
- * @param {Array<{tabId: number, title: string, url: string, content: string}>} contents
- * @returns {Promise<void>}
- */
-async function openOrReuseLLMTabs(currentTab, selectedLLMProviders, contents) {
-  llmTabIds = [];
-  const providersToOpen = [...selectedLLMProviders];
-  let firstTabToActivateId = null;
-
-  // Check if current tab can be reused
-  if (currentTab && currentTab.url && isLLMPage(currentTab.url)) {
-    for (const providerId of selectedLLMProviders) {
-      const meta = LLM_PROVIDER_META[providerId];
-      if (meta && currentTab.url.startsWith(meta.url)) {
-        // Found a match, reuse this tab
-        const index = providersToOpen.indexOf(providerId);
-        if (index > -1) {
-          providersToOpen.splice(index, 1);
-        }
-
-        // Inject into current tab
-        if (currentTab.id) {
-          const ok = await injectLLMPageInjector(currentTab.id);
-          if (ok) {
-            llmTabIds.push(currentTab.id);
-            firstTabToActivateId = currentTab.id;
-
-            // Small delay to ensure script is settled
-            await new Promise((resolve) => setTimeout(resolve, 100));
-
-            await chrome.tabs.sendMessage(currentTab.id, {
-              type: 'inject-llm-data',
-              tabs: contents,
-              promptContent: selectedPromptContent,
-              files: selectedLocalFiles,
-              sendButtonSelector: meta.sendButtonSelector || null,
-            });
-          }
-        }
-        break;
-      }
-    }
-  }
-
-  // Create new tabs for remaining providers
-  const tabCreationPromises = providersToOpen.map((providerId) => {
-    const meta = LLM_PROVIDER_META[providerId];
-    if (!meta) return Promise.resolve(null);
-
-    return chrome.tabs.create({
-      url: meta.url,
-      active: false,
-    });
-  });
-
-  const createdTabs = await Promise.all(tabCreationPromises);
-
-  // Inject into new tabs
-  for (let i = 0; i < createdTabs.length; i++) {
-    const newTab = createdTabs[i];
-    const providerId = providersToOpen[i];
-
-    if (newTab && newTab.id) {
-      const meta = LLM_PROVIDER_META[providerId];
-      if (!meta) continue;
-
-      const ok = await injectLLMPageInjector(newTab.id);
-      if (ok) {
-        llmTabIds.push(newTab.id);
-        if (!firstTabToActivateId) {
-          firstTabToActivateId = newTab.id;
-        }
-
-        // Small delay to ensure script is settled
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        await chrome.tabs.sendMessage(newTab.id, {
-          type: 'inject-llm-data',
-          tabs: contents,
-          promptContent: selectedPromptContent,
-          files: selectedLocalFiles,
-          sendButtonSelector: meta.sendButtonSelector || null,
-        });
-      }
-    }
-  }
-
-  // Activate first tab
-  if (firstTabToActivateId) {
-    await chrome.tabs.update(firstTabToActivateId, { active: true });
-  }
-}
-
-/**
- * Handle sending page content to an LLM provider from the context menu.
- * @param {string} providerId
- * @param {chrome.tabs.Tab} currentTab
- * @returns {Promise<void>}
- */
-async function handleSendToLLM(providerId, currentTab) {
-  try {
-    if (!currentTab.id) {
-      return;
-    }
-
-    // 1. Collect page content
-    const contents = await collectPageContentFromTabs([currentTab.id]);
-    if (!contents || contents.length === 0) {
-      console.warn('[background] No content collected from tab');
-      return;
-    }
-
-    const providerMeta = LLM_PROVIDER_META[providerId];
-    if (!providerMeta) {
-      console.warn(
-        `[background] No metadata found for LLM provider: ${providerId}`,
-      );
-      return;
-    }
-
-    // 2. Capture screenshot if the tab has a valid URL
-    let files = [];
-    if (
-      currentTab.url &&
-      (currentTab.url.startsWith('http://') ||
-        currentTab.url.startsWith('https://'))
-    ) {
-      try {
-        const dataUrl = await chrome.tabs.captureVisibleTab(
-          currentTab.windowId,
-          { format: 'jpeg', quality: 80 },
-        );
-        if (dataUrl) {
-          files.push({
-            name: 'screenshot.jpg',
-            type: 'image/jpeg',
-            dataUrl,
-          });
-        }
-      } catch (error) {
-        console.warn('[background] Failed to capture screenshot:', error);
-      }
-    }
-
-    // 3. Open new tab for the LLM provider
-    const newTab = await chrome.tabs.create({
-      url: providerMeta.url,
-      active: true, // Make the new tab active
-    });
-
-    if (!newTab.id) {
-      console.warn('[background] Could not create new tab for LLM provider');
-      return;
-    }
-
-    // 4. Inject content into the new tab
-    const ok = await injectLLMPageInjector(newTab.id);
-    if (ok) {
-      // Small delay to ensure script is settled
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      await chrome.tabs.sendMessage(newTab.id, {
-        type: 'inject-llm-data',
-        tabs: contents,
-        promptContent: '', // No prompt content from context menu
-        files: files,
-        // IMPORTANT: Omit sendButtonSelector to prevent auto-sending
-      });
-    }
-  } catch (error) {
-    console.error(`[background] Error in handleSendToLLM:`, error);
-  }
-}
-
-/**
  * Get highlighted tabs in the current window, falling back to the active tab.
  * @returns {Promise<chrome.tabs.Tab[]>}
  */
@@ -2589,92 +1732,291 @@ async function handleMarkdownDownload() {
 }
 
 /**
- * Restore a saved session window tree into a new browser window.
- * @param {any[]} tree
- * @returns {Promise<void>}
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
  */
-async function restoreWindowFromTree(tree) {
-  const tabs = [];
-  (Array.isArray(tree) ? tree : []).forEach((node) => {
-    if (node?.type === 'tab') {
-      tabs.push({ ...node, groupId: -1 });
-    } else if (node?.type === 'group' && Array.isArray(node.tabs)) {
-      node.tabs.forEach((tab) => {
-        tabs.push({ ...tab, groupId: node.id, group: node });
-      });
-    }
-  });
-  tabs.sort((a, b) => (a.index || 0) - (b.index || 0));
-  if (tabs.length === 0) {
-    return;
+function isObjectRecord(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} rawUrl
+ * @returns {string}
+ */
+function normalizeBackgroundFetchUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    throw new Error('Nenya background fetch requires a non-empty URL.');
   }
 
-  const first = tabs[0];
-  const newWindow = await chrome.windows.create({
-    url: first.url,
-    focused: true,
-  });
-  const windowId = newWindow?.id;
-  const firstTabId = newWindow?.tabs?.[0]?.id;
-  if (typeof windowId !== 'number' || typeof firstTabId !== 'number') {
-    return;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (error) {
+    throw new Error('Nenya background fetch requires an absolute URL.');
   }
 
-  if (first.pinned) {
-    await chrome.tabs.update(firstTabId, { pinned: true });
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(
+      'Nenya background fetch only supports http and https URLs.',
+    );
   }
 
-  const createdTabs = [{ id: firstTabId, oldGroupId: first.groupId, group: first.group }];
-  for (let i = 1; i < tabs.length; i += 1) {
-    const tabInfo = tabs[i];
-    const newTab = await chrome.tabs.create({
-      windowId,
-      url: tabInfo.url,
-      pinned: Boolean(tabInfo.pinned),
-      active: false,
-    });
-    if (typeof newTab?.id === 'number') {
-      createdTabs.push({ id: newTab.id, oldGroupId: tabInfo.groupId, group: tabInfo.group });
-    }
+  return parsed.toString();
+}
+
+/**
+ * @param {unknown} rawHeaders
+ * @returns {Array<[string, string]> | undefined}
+ */
+function normalizeBackgroundFetchHeaders(rawHeaders) {
+  if (rawHeaders == null) {
+    return undefined;
   }
 
-  const groups = new Map();
-  createdTabs.forEach((tab) => {
-    if (tab.oldGroupId >= 0 && tab.group) {
-      groups.set(tab.oldGroupId, tab.group);
-    }
-  });
-
-  for (const [oldGroupId, group] of groups.entries()) {
-    const tabIds = createdTabs
-      .filter((tab) => tab.oldGroupId === oldGroupId)
-      .map((tab) => tab.id);
-    if (tabIds.length === 0) {
-      continue;
-    }
-    const newGroupId = await chrome.tabs.group({
-      tabIds: /** @type {any} */ (tabIds),
-      createProperties: { windowId },
-    });
-    await chrome.tabGroups.update(newGroupId, {
-      title: group.title || 'Group',
-      color: group.color || 'grey',
-      collapsed: Boolean(group.collapsed),
+  if (Array.isArray(rawHeaders)) {
+    return rawHeaders.map((entry) => {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        throw new Error(
+          'Nenya background fetch headers must be [name, value] pairs.',
+        );
+      }
+      return [String(entry[0]), String(entry[1])];
     });
   }
+
+  if (isObjectRecord(rawHeaders)) {
+    return Object.entries(rawHeaders).map(([key, value]) => {
+      return [String(key), String(value)];
+    });
+  }
+
+  throw new Error(
+    'Nenya background fetch headers must be an array of pairs or an object.',
+  );
+}
+
+/**
+ * @param {unknown} rawBody
+ * @returns {string | Uint8Array | undefined}
+ */
+function deserializeBackgroundFetchBody(rawBody) {
+  if (rawBody == null) {
+    return undefined;
+  }
+
+  if (!isObjectRecord(rawBody)) {
+    throw new Error('Nenya background fetch body has an invalid shape.');
+  }
+
+  const kind = rawBody.kind;
+  if (kind === 'text') {
+    if (typeof rawBody.value !== 'string') {
+      throw new Error('Nenya background fetch text bodies must be strings.');
+    }
+    return rawBody.value;
+  }
+
+  if (kind === 'bytes') {
+    if (!Array.isArray(rawBody.value)) {
+      throw new Error(
+        'Nenya background fetch byte bodies must be numeric arrays.',
+      );
+    }
+    const bytes = rawBody.value.map((value) => {
+      const next = Number(value);
+      if (!Number.isInteger(next) || next < 0 || next > 255) {
+        throw new Error(
+          'Nenya background fetch byte bodies must contain 0-255 integers.',
+        );
+      }
+      return next;
+    });
+    return Uint8Array.from(bytes);
+  }
+
+  throw new Error(`Unsupported Nenya background fetch body kind: ${kind}`);
+}
+
+/**
+ * @param {unknown} rawInit
+ * @returns {RequestInit}
+ */
+function buildBackgroundFetchInit(rawInit) {
+  if (rawInit == null) {
+    return {};
+  }
+
+  if (!isObjectRecord(rawInit)) {
+    throw new Error('Nenya background fetch init must be an object.');
+  }
+
+  const unsupportedKeys = Object.keys(rawInit).filter((key) => {
+    return !ALLOWED_BACKGROUND_FETCH_INIT_KEYS.has(key);
+  });
+  if (unsupportedKeys.length > 0) {
+    throw new Error(
+      `Unsupported Nenya background fetch init fields: ${unsupportedKeys.join(', ')}`,
+    );
+  }
+
+  /** @type {RequestInit} */
+  const init = {};
+
+  if (rawInit.method != null) {
+    const method = String(rawInit.method).trim();
+    if (!method) {
+      throw new Error('Nenya background fetch method must not be empty.');
+    }
+    init.method = method;
+  }
+
+  const headers = normalizeBackgroundFetchHeaders(rawInit.headers);
+  if (headers) {
+    init.headers = headers;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rawInit, 'body')) {
+    init.body = deserializeBackgroundFetchBody(rawInit.body);
+  }
+
+  if (rawInit.credentials != null) {
+    const credentials = String(rawInit.credentials);
+    if (!ALLOWED_BACKGROUND_FETCH_CREDENTIALS.has(credentials)) {
+      throw new Error(
+        `Unsupported Nenya background fetch credentials value: ${credentials}`,
+      );
+    }
+    init.credentials = credentials;
+  }
+
+  if (rawInit.cache != null) {
+    const cache = String(rawInit.cache);
+    if (!ALLOWED_BACKGROUND_FETCH_CACHE.has(cache)) {
+      throw new Error(
+        `Unsupported Nenya background fetch cache value: ${cache}`,
+      );
+    }
+    init.cache = cache;
+  }
+
+  if (rawInit.redirect != null) {
+    const redirect = String(rawInit.redirect);
+    if (!ALLOWED_BACKGROUND_FETCH_REDIRECT.has(redirect)) {
+      throw new Error(
+        `Unsupported Nenya background fetch redirect value: ${redirect}`,
+      );
+    }
+    init.redirect = redirect;
+  }
+
+  if (rawInit.referrer != null) {
+    init.referrer = String(rawInit.referrer);
+  }
+
+  if (rawInit.referrerPolicy != null) {
+    const referrerPolicy = String(rawInit.referrerPolicy);
+    if (!ALLOWED_BACKGROUND_FETCH_REFERRER_POLICY.has(referrerPolicy)) {
+      throw new Error(
+        `Unsupported Nenya background fetch referrerPolicy value: ${referrerPolicy}`,
+      );
+    }
+    init.referrerPolicy = referrerPolicy;
+  }
+
+  if (rawInit.integrity != null) {
+    init.integrity = String(rawInit.integrity);
+  }
+
+  if (rawInit.keepalive != null) {
+    init.keepalive = Boolean(rawInit.keepalive);
+  }
+
+  return init;
+}
+
+/**
+ * @param {Headers} headers
+ * @returns {Record<string, string>}
+ */
+function serializeBackgroundFetchHeaders(headers) {
+  /** @type {Record<string, string>} */
+  const result = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+/**
+ * @param {RunCodeBackgroundFetchMessage} message
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   status: number,
+ *   statusText: string,
+ *   url: string,
+ *   redirected: boolean,
+ *   headers: Record<string, string>,
+ *   bodyText: string,
+ * }>}
+ */
+async function executeRunCodeBackgroundFetch(message) {
+  const url = normalizeBackgroundFetchUrl(message.url);
+  const init = buildBackgroundFetchInit(message.init);
+
+  let response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Nenya background fetch failed: ${detail}`);
+  }
+
+  const bodyText = await response.text();
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    redirected: response.redirected,
+    headers: serializeBackgroundFetchHeaders(response.headers),
+    bodyText,
+  };
 }
 
 // ============================================================================
 // MESSAGE LISTENER
 // ============================================================================
 
+if (chrome.runtime.onUserScriptMessage) {
+  chrome.runtime.onUserScriptMessage.addListener(
+    (message, sender, sendResponse) => {
+      if (!message || message.type !== RUN_CODE_BACKGROUND_FETCH_MESSAGE) {
+        return false;
+      }
+
+      void (async () => {
+        try {
+          const response = await executeRunCodeBackgroundFetch(
+            /** @type {RunCodeBackgroundFetchMessage} */ (message),
+          );
+          sendResponse({ ok: true, response });
+        } catch (error) {
+          console.error('[background] Run code background fetch failed:', error);
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+
+      return true;
+    },
+  );
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') {
     return false;
-  }
-
-  if (handleOptionsBackupMessage(message, sendResponse)) {
-    return true;
   }
 
   if (handleTokenValidationMessage(message, sendResponse)) {
@@ -2800,6 +2142,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === GET_RAINDROP_FAVORITES_MESSAGE) {
+    handleGetRaindropFavorites()
+      .then((result) => {
+        sendResponse({
+          ok: true,
+          items: Array.isArray(result?.items) ? result.items : [],
+        });
+      })
+      .catch((error) => {
+        console.error('[background] Load Raindrop favorites failed:', error);
+        sendResponse({
+          ok: false,
+          items: [],
+          error: error instanceof Error ? error.message : 'Failed to load favorites.',
+        });
+      });
+    return true;
+  }
+
+  if (message.type === SET_RAINDROP_FAVORITE_MESSAGE) {
+    const { id, important } = message;
+    handleSetRaindropFavorite(id, Boolean(important))
+      .then((result) => {
+        sendResponse({ ok: true, ...result });
+      })
+      .catch((error) => {
+        console.error('[background] Update Raindrop favorite failed:', error);
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : 'Failed to update favorite.',
+        });
+      });
+    return true;
+  }
+
   if (message.type === GET_CURRENT_TAB_ID_MESSAGE) {
     if (sender.tab) {
       sendResponse({ tabId: sender.tab.id });
@@ -2868,255 +2245,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === NOTION_SEARCH_MESSAGE) {
-    const query = typeof message.query === 'string' ? message.query : '';
-    searchNotion(query)
-      .then((result) => {
-        sendResponse({
-          notionPages: Array.isArray(result?.notionPages)
-            ? result.notionPages
-            : [],
-          notionDataSources: Array.isArray(result?.notionDataSources)
-            ? result.notionDataSources
-            : [],
-        });
-      })
-      .catch((error) => {
-        console.warn('[background] Notion search failed:', error);
-        sendResponse({
-          notionPages: [],
-          notionDataSources: [],
-          error: error instanceof Error ? error.message : 'Notion search failed.',
-        });
-      });
-    return true;
-  }
-
-  if (message.type === VALIDATE_NOTION_SECRET_MESSAGE) {
-    const secret = typeof message.secret === 'string' ? message.secret : '';
-    validateNotionSecret(secret)
-      .then((result) => {
-        sendResponse(result);
-      })
-      .catch((error) => {
-        console.error('[background] Notion secret validation failed:', error);
-        sendResponse({
-          ok: false,
-          error: error instanceof Error ? error.message : 'Validation failed.',
-        });
-      });
-    return true;
-  }
-
-  if (message.type === FETCH_SESSIONS_MESSAGE) {
-    handleFetchSessions()
-      .then((sessions) => {
-        sendResponse({ ok: true, sessions });
-      })
-      .catch((error) => {
-        console.error('[background] Fetch sessions failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === FETCH_SESSION_DETAILS_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    handleFetchSessionDetails(collectionId)
-      .then((details) => {
-        sendResponse({ ok: true, details });
-      })
-      .catch((error) => {
-        console.error('[background] Fetch session details failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === RESTORE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    handleRestoreSession(collectionId)
-      .then(() => {
-        sendResponse({ ok: true });
-      })
-      .catch((error) => {
-        console.error('[background] Restore session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === RESTORE_WINDOW_MESSAGE) {
-    void (async () => {
-      try {
-        await restoreWindowFromTree(message.tree);
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore window failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === RESTORE_GROUP_MESSAGE) {
-    void (async () => {
-      try {
-        const group = message.group;
-        const tabs = Array.isArray(group?.tabs) ? group.tabs : [];
-        const currentWindow = await chrome.windows.getCurrent();
-        const windowId = currentWindow.id;
-        if (typeof windowId !== 'number') {
-          throw new Error('Could not get current window');
-        }
-
-        const tabIds = [];
-        for (const tab of tabs) {
-          const newTab = await chrome.tabs.create({
-            windowId,
-            url: tab.url,
-            pinned: Boolean(tab.pinned),
-            active: false,
-          });
-          if (typeof newTab?.id === 'number') {
-            tabIds.push(newTab.id);
-          }
-        }
-
-        if (tabIds.length > 0) {
-          const newGroupId = await chrome.tabs.group({
-            tabIds: /** @type {any} */ (tabIds),
-            createProperties: { windowId },
-          });
-          await chrome.tabGroups.update(newGroupId, {
-            title: group.title || 'Group',
-            color: group.color || 'grey',
-            collapsed: Boolean(group.collapsed),
-          });
-        }
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore group failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === RESTORE_TAB_MESSAGE) {
-    void (async () => {
-      try {
-        const url = typeof message.url === 'string' ? message.url : '';
-        if (!url) {
-          throw new Error('Invalid tab URL');
-        }
-        await createTabNextToActive({
-          url,
-          pinned: Boolean(message.pinned),
-          active: true,
-        });
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Restore tab failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === SAVE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    if (!Number.isFinite(collectionId)) {
-      sendResponse({ ok: false, error: 'Invalid collection ID' });
-      return false;
-    }
-    void (async () => {
-      try {
-        await ensureDeviceCollectionAndExport(undefined, collectionId);
-        sendResponse({ ok: true });
-      } catch (error) {
-        console.error('[background] Save session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === 'mirror:ensureSessionsCollection') {
-    ensureNenyaSessionsCollection()
-      .then(() => {
-        sendResponse({ ok: true });
-      })
-      .catch((error) => {
-        console.warn('[background] Ensure sessions collection failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === UPDATE_SESSION_NAME_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    const oldName = typeof message.oldName === 'string' ? message.oldName : '';
-    const newName = typeof message.newName === 'string' ? message.newName : '';
-    handleUpdateSessionName(collectionId, oldName, newName)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Update session name failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === DELETE_SESSION_MESSAGE) {
-    const collectionId = Number(message.collectionId);
-    handleDeleteSession(collectionId)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Delete session failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === 'mirror:uploadCollectionCover') {
-    const collectionId = Number(message.collectionId);
-    const iconPath = typeof message.iconPath === 'string' ? message.iconPath : '';
-    handleUploadCollectionCover(collectionId, iconPath)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Upload collection cover failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === SET_CURRENT_SESSION_ICON_PREFERENCE_MESSAGE) {
-    const iconPath = typeof message.iconPath === 'string' ? message.iconPath : '';
-    handleSetCurrentSessionIconPreference(iconPath)
-      .then((result) => {
-        sendResponse({ ok: true, ...result });
-      })
-      .catch((error) => {
-        console.error('[background] Persist session icon preference failed:', error);
-        sendResponse({ ok: false, error: error.message });
-      });
-    return true;
-  }
-
   if (message.type === CLIPBOARD_SAVE_TO_UNSORTED_MESSAGE) {
     const clipboardText =
       typeof message.clipboardText === 'string' ? message.clipboardText : '';
@@ -3161,97 +2289,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'launchElementPicker') {
-    const tabId = typeof message.tabId === 'number' ? message.tabId : null;
-    if (tabId === null) {
-      sendResponse({ success: false, error: 'Invalid tab ID' });
-      return false;
-    }
-    void launchElementPicker(tabId)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch((error) => {
-        console.error('[background] Failed to launch element picker:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (message.type === 'blockElement:addSelector') {
-    const selector =
-      typeof message.selector === 'string' ? message.selector : '';
-    const url = typeof message.url === 'string' ? message.url : '';
-
-    if (!selector || !url) {
-      sendResponse({ success: false, error: 'Invalid selector or URL' });
-      return false;
-    }
-
-    void (async () => {
-      try {
-        // Extract URL pattern from the URL
-        const urlObj = new URL(url);
-        const urlPattern = `${urlObj.protocol}//${urlObj.hostname}/*`;
-
-        // Load existing rules
-        const STORAGE_KEY = 'blockElementRules';
-        const stored = await chrome.storage.local.get(STORAGE_KEY);
-        const rules = Array.isArray(stored?.[STORAGE_KEY])
-          ? stored[STORAGE_KEY]
-          : [];
-
-        // Find existing rule for this URL pattern or create new one
-        let rule = rules.find((r) => r.urlPattern === urlPattern);
-        const now = new Date().toISOString();
-
-        if (rule) {
-          // Add selector if not already present
-          if (!rule.selectors.includes(selector)) {
-            rule.selectors.push(selector);
-            rule.updatedAt = now;
-          }
-        } else {
-          // Create new rule
-          const generateRuleId = () => {
-            if (typeof crypto?.randomUUID === 'function') {
-              return crypto.randomUUID();
-            }
-            const random = Math.random().toString(36).slice(2);
-            return 'rule-' + Date.now().toString(36) + '-' + random;
-          };
-
-          rule = {
-            id: generateRuleId(),
-            urlPattern,
-            selectors: [selector],
-            createdAt: now,
-            updatedAt: now,
-          };
-          rules.push(rule);
-        }
-
-        // Save rules
-        await chrome.storage.local.set({
-          [STORAGE_KEY]: rules,
-        });
-
-        // Notify active tab to re-apply blocking rules immediately
-        if (sender.tab && sender.tab.id) {
-          void chrome.tabs.sendMessage(sender.tab.id, {
-            type: 'blockElement:reapplyRules',
-          });
-        }
-
-        sendResponse({ success: true, rule });
-      } catch (error) {
-        console.error('[background] Failed to save blocking rule:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
   if (message.type === COLLECT_PAGE_CONTENT_MESSAGE) {
     void (async () => {
       try {
@@ -3288,222 +2325,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true, contents });
       } catch (error) {
         console.error('[background] Error collecting page content:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === OPEN_LLM_TABS_MESSAGE) {
-    void (async () => {
-      try {
-        const sessionId =
-          typeof message.sessionId === 'string' ? message.sessionId : '';
-        const chatPageTabId =
-          typeof message.chatPageTabId === 'number'
-            ? message.chatPageTabId
-            : null;
-        const providers = Array.isArray(message.providers)
-          ? message.providers
-          : [];
-        const currentTabIndex =
-          typeof message.currentTabIndex === 'number'
-            ? message.currentTabIndex
-            : 0;
-
-        if (!sessionId) {
-          sendResponse({
-            success: false,
-            error: 'Invalid session ID',
-          });
-          return;
-        }
-
-        const result = await openLLMTabs(
-          sessionId,
-          chatPageTabId,
-          providers,
-          currentTabIndex,
-        );
-        sendResponse(result);
-      } catch (error) {
-        console.error('[background] Error opening LLM tabs:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === CLOSE_LLM_TABS_MESSAGE) {
-    void (async () => {
-      try {
-        const sessionId =
-          typeof message.sessionId === 'string' ? message.sessionId : '';
-
-        if (!sessionId) {
-          sendResponse({ success: false, error: 'Invalid session ID' });
-          return;
-        }
-
-        const result = await closeLLMTabs(sessionId);
-        sendResponse(result);
-      } catch (error) {
-        console.error('[background] Error closing LLM tabs:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === SWITCH_LLM_PROVIDER_MESSAGE) {
-    void (async () => {
-      try {
-        const sessionId =
-          typeof message.sessionId === 'string' ? message.sessionId : '';
-        const oldProviderId =
-          typeof message.oldProviderId === 'string'
-            ? message.oldProviderId
-            : '';
-        const newProviderId =
-          typeof message.newProviderId === 'string'
-            ? message.newProviderId
-            : '';
-
-        if (!sessionId) {
-          sendResponse({ success: false, error: 'Invalid session ID' });
-          return;
-        }
-
-        if (!oldProviderId || !newProviderId) {
-          sendResponse({
-            success: false,
-            error: 'Invalid provider IDs',
-          });
-          return;
-        }
-
-        const result = await switchLLMProvider(
-          sessionId,
-          oldProviderId,
-          newProviderId,
-        );
-        sendResponse(result);
-      } catch (error) {
-        console.error('[background] Error switching LLM provider:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === COLLECT_AND_SEND_TO_LLM_MESSAGE) {
-    void (async () => {
-      try {
-        // Get tabs to collect content from
-        let tabIds = Array.isArray(message.tabIds) ? message.tabIds : [];
-        const llmProviders = Array.isArray(message.llmProviders)
-          ? message.llmProviders
-          : [];
-        const promptContent =
-          typeof message.promptContent === 'string'
-            ? message.promptContent
-            : '';
-        const sessionId =
-          typeof message.sessionId === 'string' ? message.sessionId : '';
-        const useReuseTabs = message.useReuseTabs === true;
-        const tabContentModes = parseTabContentModes(message.tabContentModes);
-
-        if (tabIds.length === 0) {
-          // Get highlighted tabs or active tab
-          const highlightedTabs = await chrome.tabs.query({
-            currentWindow: true,
-            highlighted: true,
-          });
-
-          if (highlightedTabs.length > 0) {
-            tabIds = highlightedTabs
-              .map((t) => t.id)
-              .filter((id) => typeof id === 'number');
-          } else {
-            const activeTabs = await chrome.tabs.query({
-              currentWindow: true,
-              active: true,
-            });
-            const activeTab = activeTabs && activeTabs[0];
-            if (activeTab && typeof activeTab.id === 'number') {
-              tabIds = [activeTab.id];
-            }
-          }
-        }
-
-        if (tabIds.length === 0) {
-          sendResponse({
-            success: false,
-            error: 'No valid tabs to collect content from',
-          });
-          return;
-        }
-
-        if (llmProviders.length === 0) {
-          sendResponse({
-            success: false,
-            error: 'No LLM providers selected',
-          });
-          return;
-        }
-
-        // Collect content from each tab
-        collectedContents = await collectLLMContextFromTabs(
-          tabIds,
-          tabContentModes,
-        );
-        selectedPromptContent = buildPromptWithSourceUrls(
-          promptContent,
-          collectedContents,
-        );
-        selectedLocalFiles = [];
-
-        // Get current tab
-        const currentTabs = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
-        const currentTab = currentTabs[0];
-
-        // Capture screenshot if only current tab is selected
-        if (tabIds.length === 1 && currentTab && tabIds[0] === currentTab.id) {
-          try {
-            const dataUrl = await chrome.tabs.captureVisibleTab(
-              currentTab.windowId,
-              { format: 'jpeg', quality: 80 },
-            );
-            if (dataUrl) {
-              selectedLocalFiles.unshift({
-                name: 'screenshot.jpg',
-                type: 'image/jpeg',
-                dataUrl,
-              });
-            }
-          } catch (error) {
-            console.warn('[background] Failed to capture screenshot:', error);
-          }
-        }
-
-        // Use reuseLLMTabs if requested and session ID is provided
-        if (useReuseTabs && sessionId) {
-          const result = await reuseLLMTabs(
-            sessionId,
-            llmProviders,
-            collectedContents,
-          );
-          sendResponse(result);
-        } else {
-          // Fallback to old behavior for backward compatibility
-          await openOrReuseLLMTabs(currentTab, llmProviders, collectedContents);
-          sendResponse({ success: true });
-        }
-      } catch (error) {
-        console.error('[background] Error in collect-and-send-to-llm:', error);
         sendResponse({ success: false, error: error.message });
       }
     })();
@@ -3587,23 +2408,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-/**
- * Launch the element picker in the specified tab.
- * @param {number} tabId - The tab ID to inject the picker into
- * @returns {Promise<void>}
- */
-async function launchElementPicker(tabId) {
-  try {
-    // Inject the element picker content script
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['/src/contentScript/epicker.js'],
-    });
-  } catch (error) {
-    console.error('[background] Failed to inject element picker:', error);
-    throw error;
-  }
-}
 
 async function handleSaveToUnsortedRequest() {
   try {
@@ -3793,17 +2597,6 @@ if (chrome.contextMenus) {
     }
 
     // ========================================================================
-    // SEND TO LLM MENU HANDLERS
-    // ========================================================================
-    const llmMenuItem = parseLLMMenuItem(menuItemId);
-    if (llmMenuItem) {
-      if (tab) {
-        void handleSendToLLM(llmMenuItem.providerId, tab);
-      }
-      return;
-    }
-
-    // ========================================================================
     // NENYA MENU HANDLERS
     // ========================================================================
 
@@ -3837,14 +2630,6 @@ if (chrome.contextMenus) {
       return;
     }
 
-    // Hide elements (Custom Filter)
-    if (menuItemId === NENYA_MENU_IDS.CUSTOM_FILTER) {
-      if (tab && typeof tab.id === 'number') {
-        void launchElementPicker(tab.id);
-      }
-      return;
-    }
-
     // Auto Reload
     if (menuItemId === NENYA_MENU_IDS.AUTO_RELOAD) {
       if (tab && tab.url) {
@@ -3859,28 +2644,6 @@ if (chrome.contextMenus) {
       void handleMarkdownDownload().catch((error) => {
         console.error('[contextMenu] Download markdown failed:', error);
       });
-      return;
-    }
-
-    // Bright Mode
-    if (menuItemId === NENYA_MENU_IDS.BRIGHT_MODE) {
-      if (tab && tab.url) {
-        await chrome.storage.local.set({ brightModePrefillUrl: tab.url });
-        chrome.runtime.openOptionsPage();
-      }
-      return;
-    }
-
-    // Dark Mode
-    if (menuItemId === NENYA_MENU_IDS.DARK_MODE) {
-      if (tab && tab.url) {
-        const optionsUrl = chrome.runtime.getURL('src/options/index.html');
-        chrome.tabs.create({
-          url: `${optionsUrl}#dark-mode-heading&url=${encodeURIComponent(
-            tab.url,
-          )}`,
-        });
-      }
       return;
     }
 

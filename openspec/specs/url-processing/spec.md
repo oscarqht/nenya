@@ -1,6 +1,6 @@
 ## URL Processing Specification
 
-`src/options/urlProcessRules.js`, `src/options/index.html`, `src/shared/urlProcessor.js`, `src/background/clipboard.js`, `src/background/index.js`, `src/background/mirror.js`, `src/background/projects.js`, `src/background/options-backup.js`, `src/background/automerge-options-sync.js`, and `src/options/importExport.js` implement the URL Processing capability: users define deterministic rule sets that match URL patterns, apply ordered processors during specific workflows (clipboard copies, Raindrop saves, and tab openings), and ensure those rules remain portable through backup, export, and Automerge sync flows.
+`src/options/urlProcessRules.js`, `src/options/index.html`, `src/shared/urlProcessor.js`, `src/background/clipboard.js`, `src/background/index.js`, `src/background/mirror.js`, `src/background/projects.js`, `src/options/importExport.js`, and `src/options/importExport.js` implement the URL Processing capability: users define deterministic rule sets that match URL patterns, apply ordered processors during specific workflows (clipboard copies, Raindrop saves, and tab openings), and ensure those rules remain portable through JSON import/export.
 
 ### Requirement: The options UI SHALL normalize and reflect sync-stored URL process rules
 
@@ -8,11 +8,11 @@
 - **GIVEN** the options page initializes,
 - **THEN** `loadAndRenderRules()` MUST read `chrome.storage.sync.urlProcessRules`, pass the raw array through `normalizeRules()`, and discard entries missing a trimmed `name`, at least one valid `URLPattern`, at least one processor, or a supported `applyWhen`,
 - **AND** `normalizeRules()` MUST trim pattern strings, validate them with the `URLPattern` constructor (treating hostname, pathname, wildcard, and full-URL inputs appropriately), drop invalid regex-style processor names, coerce processor IDs via `generateProcessorId()`, and strip deprecated `open-in-new-tab` contexts,
-- **AND** whenever normalization changes the payload, the sanitized array MUST be written back to `chrome.storage.sync` before calling `render()` so the UI, backups, and Automerge receive the cleaned copy,
+- **AND** whenever normalization changes the payload, the sanitized array MUST be written back to `chrome.storage.sync` before calling `render()` so the UI and JSON exports receive the cleaned copy,
 - **AND** `render()` MUST either show the empty-state banner or list each rule sorted alphabetically by `name`.
 
 #### Scenario: React to sync changes in real time
-- **GIVEN** another browser, Automerge sync, or backup restore mutates `chrome.storage.sync.urlProcessRules`,
+- **GIVEN** another browser or JSON import mutates `chrome.storage.sync.urlProcessRules`,
 - **WHEN** `chrome.storage.onChanged` fires for that key (and the local save promise is not in-flight),
 - **THEN** the options script MUST re-run `normalizeRules()` against the new value, update the in-memory `rules` array, clear `selectedRuleId` / `editingRuleId` when those records disappear, and re-render so the list, detail panel, and form never reference stale data.
 
@@ -78,11 +78,11 @@
 - **GIVEN** `chrome.webNavigation.onBeforeNavigate` fires for a top-level HTTP(S) navigation,
 - **THEN** `src/background/index.js` MUST call `processUrl(details.url, 'open-in-new-tab')` and, when the returned value differs, update the tab’s URL via `chrome.tabs.update()` so legacy rules marked for that context still execute even though the options UI no longer exposes it.
 
-### Requirement: Backups, exports, and sync SHALL propagate URL process rules
+### Requirement: JSON import/export SHALL propagate URL process rules
 
-#### Scenario: Options backup/export includes sanitized rules
-- **GIVEN** backups (`src/background/options-backup.js`) or manual exports (`src/options/importExport.js`) run,
-- **THEN** they MUST call `collectUrlProcessRules()` / `loadUrlProcessRules()` to pull the current list, sanitize it via `normalizeUrlProcessRules()` (preserving processors, applyWhen, disabled flag, and timestamps), embed it in the payload, and `applyUrlProcessRules()` when restoring so other devices recreate the exact rule set in `chrome.storage.sync`.
+#### Scenario: options import/export includes sanitized rules
+- **GIVEN** manual exports (`src/options/importExport.js`) run,
+- **THEN** they MUST call `collectUrlProcessRules()` / `loadUrlProcessRules()` to pull the current list, sanitize it via `normalizeUrlProcessRules()` (preserving processors, applyWhen, disabled flag, and timestamps), embed it in the payload, and `applyUrlProcessRules()` when importing so other devices recreate the exact rule set in `chrome.storage.sync`.
 
 #### Scenario: Automerge sync mirrors the urlProcessRules key
 - **GIVEN** Automerge sync is active,

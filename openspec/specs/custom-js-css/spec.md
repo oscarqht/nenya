@@ -1,6 +1,6 @@
 ## Purpose
 
-`src/options/customCode.js`, `src/options/index.html`, `src/popup/popup.js`, `src/contentScript/custom-js-css.js`, `src/background/index.js`, `src/options/importExport.js`, and `src/background/automerge-options-sync.js` collectively implement the “Custom JS & CSS” capability: users create URL-patterned rules that inject CSS and JavaScript into matching pages, manage those rules from the Options UI or popup shortcuts, and keep them portable through the Raindrop backup plus Automerge sync flows.
+`src/options/customCode.js`, `src/options/index.html`, `src/popup/popup.js`, `src/contentScript/custom-js-css.js`, `src/background/index.js`, `src/options/importExport.js`, and `src/background/automerge-options-sync.js` collectively implement the “Custom JS & CSS” capability: users create URL-patterned rules that inject CSS and JavaScript into matching pages, manage those rules from the Options UI or popup shortcuts, and keep them portable through JSON import/export.
 
 ## Requirements
 
@@ -13,7 +13,7 @@
 - **AND** the UI MUST either show the empty-state banner or display each rule with its pattern summary.
 
 #### Scenario: Reflect real-time storage updates
-- **GIVEN** another browser, Automerge sync, popup import, or backup restore changes `chrome.storage.local.customCodeRules`,
+- **GIVEN** another options page, popup import, or JSON import changes `chrome.storage.local.customCodeRules`,
 - **WHEN** `chrome.storage.onChanged` fires for that key in the `local` namespace,
 - **THEN** the options script MUST ignore the change while the local save promise is in-flight (`syncing === true`) and otherwise re-run `normalizeRules()` plus `render()`,
 - **AND** it MUST clear `selectedRuleId` / `editingRuleId` when the referenced rule disappears so the details panel and form never reference stale objects.
@@ -59,7 +59,7 @@
 - **AND** `applyMatchingRules()` MUST keep a set of active rule IDs and remove any now-stale `<style>` elements when a rule stops matching, while acknowledging that previously executed JS cannot be rolled back (disabling the rule only prevents future injections).
 
 #### Scenario: Reapply injections when configuration changes
-- **GIVEN** another tab, import, or backup modifies `customCodeRules`,
+- **GIVEN** another tab, import, or import modifies `customCodeRules`,
 - **THEN** the content script’s `chrome.storage.onChanged` listener MUST detect the `local` change, swap in the new `rules` array, and immediately call `applyMatchingRules()` so SPA navigations and edits propagate without reloading the page,
 - **AND** initialization MUST also call `applyMatchingRules()` after the first `loadRules()` completes so matches apply on the initial render.
 
@@ -71,13 +71,13 @@
 - **AND** host-page CSP MAY block this automatic custom-code path on pages that disallow eval, so stored rules do not gain new page-load execution privileges unexpectedly,
 - **AND** errors (invalid tab, injection failure, runtime exceptions) MUST be caught and responded to with `{ success: false, error }` so the caller can log and avoid retry storms.
 
-### Requirement: Backups and sync SHALL propagate custom code rules across devices even though they live in local storage
+### Requirement: JSON import/export SHALL propagate custom code rules across devices even though they live in local storage
 
-#### Scenario: Include custom code rules in options backup/export
-- **GIVEN** the options backup (`readCurrentOptions()` / `applyImportedOptions()`) or manual export/import flows run,
+#### Scenario: Include custom code rules in options import/export
+- **GIVEN** the options import/export (`readCurrentOptions()` / `applyImportedOptions()`) or manual export/import flows run,
 - **THEN** they MUST call `normalizeCustomCodeRules()` to sanitize every entry, ensure deterministic sorting, and persist the sanitized list to `chrome.storage.local.customCodeRules` (while other settings go to `chrome.storage.sync`),
-- **AND** import operations MUST write the sanitized array back to local storage alongside the other categories so a restore faithfully recreates the user’s custom code rules.
+- **AND** import operations MUST write the sanitized array back to local storage alongside the other categories so JSON import faithfully recreates the user’s custom code rules.
 
 #### Scenario: Keep Automerge sync aware of local-only rules
 - **GIVEN** Automerge sync is preparing the CRDT document for Raindrop,
-- **THEN** `ensureLocalStorageInDoc()` MUST read `chrome.storage.local.customCodeRules`, detect divergence from the document’s `doc.customCodeRules`, and copy the JSON data into the Automerge change so remote merges, backups, and other browsers receive the latest rules even though they originate in local storage.
+- **THEN** `ensureLocalStorageInDoc()` MUST read `chrome.storage.local.customCodeRules`, detect divergence from the document’s `doc.customCodeRules`, and copy the JSON data into the Automerge change so remote merges, JSON imports, and other browsers receive the latest rules even though they originate in local storage.

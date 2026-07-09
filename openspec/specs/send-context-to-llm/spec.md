@@ -81,11 +81,11 @@ The background page SHALL continue to collect page content through the shared ex
 - **AND** pressing “Delete” MUST confirm via `window.confirm`, remove the entry, hide the details view when nothing remains selected, and toast success,
 - **AND** the module MUST listen to `chrome.storage.onChanged` for `llmPrompts` updates in the `sync` area so any external import/export immediately rerenders the list, clears editing state when a prompt disappears, and refreshes the detail pane when the selected prompt changes elsewhere.
 
-### Requirement: Saved prompts SHALL participate in the options backup & restore system
+### Requirement: Saved prompts SHALL participate in the options import/export system
 
-`src/background/options-backup.js` integrates prompts with the global import/export flows.
+`src/options/importExport.js` integrates prompts with the global import/export flows.
 
-#### Scenario: Normalize prompt payloads during backup and restore
+#### Scenario: Normalize prompt payloads during import and export
 - **GIVEN** `collectLLMPrompts()` runs as part of backup,
 - **THEN** it MUST call `normalizeLLMPrompts()` to drop invalid entries, trim whitespace, auto-generate IDs when missing, and sort by `name`; if normalization changed the array it MUST store the sanitized version back into sync storage before returning it for the payload,
 - **AND WHEN** `applyLLMPrompts()` receives prompts from a restore, **THEN** it MUST run the same normalization and write the sanitized list into `chrome.storage.sync.llmPrompts` (suppressing recursive backups) so the popup and options UI immediately see consistent data via their storage listeners.

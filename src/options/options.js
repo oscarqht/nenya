@@ -1,17 +1,11 @@
 import './theme.js';
 import '../shared/iconUrl.js';
 import './bookmarks.js';
-import './notionIntegration.js';
-import './backup.js';
 import './pinnedShortcuts.js';
 import './importExport.js';
 import './autoReload.js';
-import './darkMode.js';
-import './brightMode.js';
-import './blockElements.js';
 import './customCode.js';
 import './runCodeInPage.js';
-import './llmPrompts.js';
 import './autoGoogleLogin.js';
 import './customSearchEngines.js';
 
