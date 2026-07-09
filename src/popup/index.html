@@ -46,7 +46,16 @@
             role="listbox" aria-label="Custom search engines">
           </div>
         </div>
-        <div id="pinnedItemsContainer" class="flex flex-wrap gap-2 mt-2 empty:mt-0"></div>
+        <section id="favoritesSection" class="hidden" aria-labelledby="favoritesHeading">
+          <h2 id="favoritesHeading" class="text-[10px] font-bold text-base-content/50 uppercase tracking-wider mt-2">
+            Favorites
+          </h2>
+          <div id="favoritesLoading" class="favorites-loading hidden" role="status" aria-live="polite">
+            <span class="favorites-loading-spinner" aria-hidden="true"></span>
+            <span>Loading favorites...</span>
+          </div>
+          <div id="favoritesContainer" class="flex flex-wrap gap-2 mt-2 empty:mt-0"></div>
+        </section>
         <div id="bookmarksSearchResults" class="space-y-2" role="list"></div>
       </div>
     </article>

@@ -84,11 +84,11 @@ function getPinnedShortcutActionFromEvent(event) {
 }
 
 /**
- * Resolve a pinned search-result index from Alt+Digit1..9.
+ * Resolve a favorite-item index from Alt+Digit1..9.
  * @param {KeyboardEvent} event
  * @returns {number}
  */
-function getPinnedItemIndexFromEvent(event) {
+function getFavoriteItemIndexFromEvent(event) {
   if (
     !event.altKey ||
     event.metaKey ||
@@ -287,7 +287,6 @@ const SHORTCUT_CONFIG = {
 };
 
 const STORAGE_KEY = 'pinnedShortcuts';
-const PINNED_SEARCH_RESULTS_STORAGE_KEY = 'pinnedSearchResults';
 const SEARCH_RESULT_WEIGHTS_KEY = 'searchResultWeights';
 const RUN_CODE_IN_PAGE_RULES_STORAGE_KEY = 'runCodeInPageRules';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
@@ -342,11 +341,21 @@ const shortcutsContainer = /** @type {HTMLDivElement | null} */ (
   document.getElementById('shortcutsContainer')
 );
 
-const pinnedItemsContainer = document.getElementById('pinnedItemsContainer');
+const favoritesSection = /** @type {HTMLElement | null} */ (
+  document.getElementById('favoritesSection')
+);
+const favoritesContainer = /** @type {HTMLDivElement | null} */ (
+  document.getElementById('favoritesContainer')
+);
+const favoritesLoading = /** @type {HTMLDivElement | null} */ (
+  document.getElementById('favoritesLoading')
+);
+/** @type {Array<{id: string, title: string, url: string}>} */
+let favoriteItems = [];
+/** @type {Set<string>} */
+let favoriteItemIds = new Set();
 /** @type {number} */
-let draggedItemIndex = -1;
-/** @type {number} */
-let pinnedItemsRenderToken = 0;
+let favoriteItemsRenderToken = 0;
 
 // Keep references to buttons for backward compatibility
 let getMarkdownButton = null;
@@ -552,42 +561,6 @@ async function loadAndRenderShortcuts() {
   } catch (error) {
     console.error('[popup] Failed to load pinned shortcuts:', error);
   }
-}
-
-
-
-// Initialize bookmarks search functionality
-if (bookmarksSearchInput && bookmarksSearchResults && customSearchSuggestions) {
-  void initializeBookmarksSearch(
-    bookmarksSearchInput,
-    bookmarksSearchResults,
-    customSearchSuggestions,
-  );
-}
-
-if (!statusMessage) {
-  console.error('[popup] Status element not found.');
-}
-
-// Initialize shortcuts on page load
-void loadAndRenderShortcuts();
-void refreshMatchingRunCodeSection();
-
-// Listen for storage changes to update UI dynamically
-if (chrome?.storage?.onChanged) {
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local') {
-      if (changes[STORAGE_KEY]) {
-        void loadAndRenderShortcuts();
-      }
-      if (changes[PINNED_SEARCH_RESULTS_STORAGE_KEY]) {
-        void renderPinnedItems();
-      }
-      if (changes[RUN_CODE_IN_PAGE_RULES_STORAGE_KEY]) {
-        void refreshMatchingRunCodeSection();
-      }
-    }
-  });
 }
 
 
@@ -804,6 +777,10 @@ async function handleImportCustomCode(file) {
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
 const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
+const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
+const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
+const FAVORITE_ITEMS_CACHE_STORAGE_KEY = 'raindropFavoriteItemsCache';
+const FAVORITE_ITEMS_CACHE_TTL_MS = 15 * 60 * 1000;
 
 const PINNED_COLOR_PALETTE = [
   { bg: '#fecaca', text: '#991b1b' }, // red-200 / red-900
@@ -1125,11 +1102,11 @@ function getPinnedFaviconSource(url) {
 }
 
 /**
- * Normalize pinned search results stored in extension storage.
+ * Normalize favorite Raindrop items.
  * @param {unknown} items
- * @returns {Array<{title: string, url: string, type: string}>}
+ * @returns {Array<{id: string, title: string, url: string}>}
  */
-function normalizePinnedItems(items) {
+function normalizeFavoriteItems(items) {
   if (!Array.isArray(items)) {
     return [];
   }
@@ -1139,68 +1116,237 @@ function normalizePinnedItems(items) {
       return accumulator;
     }
 
-    const title = typeof item.title === 'string' ? item.title : '';
-    const url = typeof item.url === 'string' ? item.url : '';
-    const type = typeof item.type === 'string' ? item.type : '';
+    const idValue = item._id ?? item.id;
+    const id =
+      typeof idValue === 'number' || typeof idValue === 'string'
+        ? String(idValue)
+        : '';
+    const url = typeof item.link === 'string'
+      ? item.link
+      : typeof item.url === 'string'
+        ? item.url
+        : '';
+    const title = typeof item.title === 'string' && item.title.trim()
+      ? item.title.trim()
+      : url;
 
-    if (!title || !url) {
+    if (!id || !title || !url) {
       return accumulator;
     }
 
-    accumulator.push({ title, url, type });
+    accumulator.push({ id, title, url });
     return accumulator;
-  }, /** @type {Array<{title: string, url: string, type: string}>} */ ([]));
-}
-
-async function getPinnedItems() {
-  const result = await chrome.storage.local.get(
-    PINNED_SEARCH_RESULTS_STORAGE_KEY,
-  );
-  return normalizePinnedItems(result[PINNED_SEARCH_RESULTS_STORAGE_KEY]);
-}
-
-async function savePinnedItems(items) {
-  await chrome.storage.local.set({
-    [PINNED_SEARCH_RESULTS_STORAGE_KEY]: normalizePinnedItems(items),
-  });
-}
-
-async function pinItem(item) {
-  const pinnedItems = await getPinnedItems();
-  const isPinned = pinnedItems.some((i) => i.url === item.url);
-  if (!isPinned) {
-    const updatedPinnedItems = [...pinnedItems, ...normalizePinnedItems([item])];
-    await savePinnedItems(updatedPinnedItems);
-    await renderPinnedItems(updatedPinnedItems);
-  }
-}
-
-async function unpinItem(url) {
-  let pinnedItems = await getPinnedItems();
-  pinnedItems = pinnedItems.filter((i) => i.url !== url);
-  await savePinnedItems(pinnedItems);
-  await renderPinnedItems(pinnedItems);
+  }, /** @type {Array<{id: string, title: string, url: string}>} */ ([]));
 }
 
 /**
- * Render the current pinned search results, ignoring stale async renders.
- * @param {Array<{title: string, url: string, type: string}>} [items]
- * @returns {Promise<void>}
+ * Persist the normalized favorites currently shown in the popup.
+ * @param {Array<{id: string, title: string, url: string}>} items
+ * @returns {void}
  */
-async function renderPinnedItems(items) {
-  if (!pinnedItemsContainer) return;
-  const renderToken = ++pinnedItemsRenderToken;
-  const pinnedItems = Array.isArray(items)
-    ? normalizePinnedItems(items)
-    : await getPinnedItems();
+function setFavoriteItemsState(items) {
+  favoriteItems = Array.isArray(items) ? [...items] : [];
+  favoriteItemIds = new Set(favoriteItems.map((item) => item.id));
+}
 
-  // Avoid wiping out newer state with an older async storage read.
-  if (renderToken !== pinnedItemsRenderToken) {
+function setFavoriteButtonState(button, isFavorite) {
+  button.setAttribute('aria-pressed', isFavorite ? 'true' : 'false');
+  button.title = isFavorite ? 'Remove from favorites' : 'Add to favorites';
+  button.classList.toggle('is-favorite', isFavorite);
+  if (isFavorite) {
+    button.classList.remove('opacity-0', 'group-hover:opacity-100');
+    button.classList.add('opacity-100');
+  } else {
+    button.classList.remove('opacity-100');
+    button.classList.add('opacity-0', 'group-hover:opacity-100');
+  }
+
+  const icon = button.parentElement?.querySelector('.icon');
+  if (icon instanceof HTMLElement) {
+    icon.classList.toggle('opacity-0', isFavorite);
+  }
+}
+
+function syncSearchResultFavoriteButtons() {
+  const buttons = document.querySelectorAll('.pin-button[data-raindrop-id]');
+  buttons.forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    const favoriteId = button.dataset.raindropId || '';
+    setFavoriteButtonState(button, favoriteItemIds.has(favoriteId));
+  });
+}
+
+function setFavoritesLoading(isLoading) {
+  if (!favoritesLoading || !favoritesSection) {
     return;
   }
 
-  pinnedItemsContainer.innerHTML = '';
-  pinnedItems.forEach((item, index) => {
+  favoritesLoading.classList.toggle('hidden', !isLoading);
+  favoritesLoading.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+  favoritesSection.classList.toggle(
+    'hidden',
+    !isLoading && favoriteItems.length === 0,
+  );
+}
+
+/**
+ * Read cached favorite items from local storage.
+ * @returns {Promise<{items: any[], fetchedAt: number, isValid: boolean, hasCache: boolean}>}
+ */
+async function getFavoriteItemsCache() {
+  const result = await chrome.storage.local.get(
+    FAVORITE_ITEMS_CACHE_STORAGE_KEY,
+  );
+  const cache = result?.[FAVORITE_ITEMS_CACHE_STORAGE_KEY];
+  if (!cache || typeof cache !== 'object') {
+    return { items: [], fetchedAt: 0, isValid: false, hasCache: false };
+  }
+
+  const items = Array.isArray(cache.items) ? cache.items : [];
+  const fetchedAt = typeof cache.fetchedAt === 'number' ? cache.fetchedAt : 0;
+  return {
+    items,
+    fetchedAt,
+    isValid: Date.now() - fetchedAt < FAVORITE_ITEMS_CACHE_TTL_MS,
+    hasCache: true,
+  };
+}
+
+/**
+ * Cache favorite items for fast popup startup.
+ * @param {any[]} items
+ * @returns {Promise<void>}
+ */
+async function saveFavoriteItemsCache(items) {
+  await chrome.storage.local.set({
+    [FAVORITE_ITEMS_CACHE_STORAGE_KEY]: {
+      items: Array.isArray(items) ? items : [],
+      fetchedAt: Date.now(),
+    },
+  });
+}
+
+async function fetchFavoriteItems() {
+  const response = await chrome.runtime.sendMessage({
+    type: GET_RAINDROP_FAVORITES_MESSAGE,
+  });
+  if (response?.ok === false) {
+    throw new Error(response.error || 'Failed to load favorites');
+  }
+  return Array.isArray(response?.items) ? response.items : [];
+}
+
+/**
+ * Render cached favorites first, then fetch when cache is missing or stale.
+ * @param {{forceFetch?: boolean}} [options]
+ * @returns {Promise<any[]>}
+ */
+async function refreshFavoriteItems(options) {
+  const forceFetch = options?.forceFetch === true;
+  const cache = await getFavoriteItemsCache();
+  if (cache.hasCache) {
+    await renderFavoriteItems(cache.items);
+  }
+
+  if (cache.hasCache && cache.isValid && !forceFetch) {
+    return cache.items;
+  }
+
+  setFavoritesLoading(true);
+  try {
+    const items = await fetchFavoriteItems();
+    await saveFavoriteItemsCache(items);
+    await renderFavoriteItems(items);
+    return items;
+  } finally {
+    setFavoritesLoading(false);
+  }
+}
+
+async function setRaindropFavorite(id, important) {
+  const response = await chrome.runtime.sendMessage({
+    type: SET_RAINDROP_FAVORITE_MESSAGE,
+    id,
+    important,
+  });
+
+  if (!response?.ok) {
+    throw new Error(response?.error || 'Failed to update favorite');
+  }
+}
+
+async function toggleFavoriteItem(item, button) {
+  const favoriteId = String(item?._id || '');
+  if (!favoriteId) {
+    throw new Error('Invalid Raindrop item ID');
+  }
+  if (button?.disabled) {
+    return;
+  }
+
+  const willFavorite = !favoriteItemIds.has(favoriteId);
+  const numericFavoriteId = Number(favoriteId);
+  const requestId = Number.isFinite(numericFavoriteId)
+    ? numericFavoriteId
+    : item._id;
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = '…';
+  }
+
+  try {
+    await setRaindropFavorite(requestId, willFavorite);
+    await refreshFavoriteItems({ forceFetch: true });
+    if (statusMessage) {
+      concludeStatus(
+        willFavorite ? 'Added to favorites' : 'Removed from favorites',
+        'success',
+        2500,
+        statusMessage,
+      );
+    }
+  } catch (error) {
+    console.error('[popup] Failed to toggle favorite:', error);
+    if (statusMessage) {
+      concludeStatus(
+        error instanceof Error ? error.message : 'Failed to update favorite',
+        'error',
+        3500,
+        statusMessage,
+      );
+    }
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = '📌';
+    }
+    syncSearchResultFavoriteButtons();
+  }
+}
+
+/**
+ * Render the current favorites row, ignoring stale async renders.
+ * @param {unknown[]} [items]
+ * @returns {Promise<void>}
+ */
+async function renderFavoriteItems(items) {
+  if (!favoritesContainer || !favoritesSection) return;
+  const renderToken = ++favoriteItemsRenderToken;
+  const sourceItems = Array.isArray(items) ? items : favoriteItems;
+  const normalizedItems = normalizeFavoriteItems(sourceItems);
+  setFavoriteItemsState(normalizedItems);
+
+  // Avoid wiping out newer state with an older async storage read.
+  if (renderToken !== favoriteItemsRenderToken) {
+    return;
+  }
+
+  favoritesSection.classList.toggle('hidden', normalizedItems.length === 0);
+  favoritesContainer.innerHTML = '';
+  normalizedItems.forEach((item, index) => {
     const colors = getStableColor(item.url);
     const faviconSource = getPinnedFaviconSource(item.url);
     const chip = document.createElement('div');
@@ -1208,7 +1354,6 @@ async function renderPinnedItems(items) {
       'badge gap-2 cursor-pointer hover:opacity-80 pr-1 border-none transition-all duration-200';
     chip.style.backgroundColor = colors.bg;
     chip.style.color = colors.text;
-    chip.setAttribute('draggable', 'true');
     chip.innerHTML = `
       <span class="text-[10px] opacity-70 font-bold pointer-events-none">${
         index + 1
@@ -1244,74 +1389,23 @@ async function renderPinnedItems(items) {
       }
     }
     chip.addEventListener('click', (e) => {
-      if (e.target.classList.contains('unpin-button')) return;
+      if (e.target instanceof Element && e.target.classList.contains('unpin-button')) {
+        return;
+      }
       void openBookmark(item.url);
     });
     const unpinButton = chip.querySelector('.unpin-button');
     if (unpinButton) {
       unpinButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        void unpinItem(item.url);
+        void toggleFavoriteItem({ _id: item.id }, unpinButton);
       });
     }
 
-    // Drag and Drop listeners
-    chip.addEventListener('dragstart', (e) => {
-      draggedItemIndex = index;
-      chip.classList.add('opacity-40');
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', index.toString());
-      }
-    });
-
-    chip.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'move';
-      }
-      return false;
-    });
-
-    chip.addEventListener('dragenter', () => {
-      if (index !== draggedItemIndex) {
-        chip.classList.add('scale-105', 'ring-2', 'ring-primary');
-      }
-    });
-
-    chip.addEventListener('dragleave', () => {
-      chip.classList.remove('scale-105', 'ring-2', 'ring-primary');
-    });
-
-    chip.addEventListener('drop', async (e) => {
-      e.stopPropagation();
-      chip.classList.remove('scale-105', 'ring-2', 'ring-primary');
-
-      const fromIndex = draggedItemIndex;
-      const toIndex = index;
-
-      if (fromIndex !== toIndex && fromIndex !== -1) {
-        const items = await getPinnedItems();
-        const movedItem = items.splice(fromIndex, 1)[0];
-        items.splice(toIndex, 0, movedItem);
-        await savePinnedItems(items);
-        await renderPinnedItems(items);
-      }
-      return false;
-    });
-
-    chip.addEventListener('dragend', () => {
-      chip.classList.remove(
-        'opacity-40',
-        'scale-105',
-        'ring-2',
-        'ring-primary',
-      );
-      draggedItemIndex = -1;
-    });
-
-    pinnedItemsContainer.appendChild(chip);
+    favoritesContainer.appendChild(chip);
   });
+
+  syncSearchResultFavoriteButtons();
 }
 
 /**
@@ -1348,23 +1442,12 @@ async function handleEditRaindropUrl(item, button, resultItem, currentResults) {
       // Update the item's link property in the stored data
       item.link = newUrl;
 
-      // Sync with pinned search results
       try {
-        const pinnedItems = await getPinnedItems();
-        let pinnedChanged = false;
-        const updatedPinnedItems = pinnedItems.map((pinned) => {
-          if (pinned.url === oldUrl) {
-            pinnedChanged = true;
-            return { ...pinned, url: newUrl };
-          }
-          return pinned;
-        });
-
-        if (pinnedChanged) {
-          await savePinnedItems(updatedPinnedItems);
+        if (favoriteItemIds.has(String(item._id))) {
+          await refreshFavoriteItems({ forceFetch: true });
         }
-      } catch (pinnedError) {
-        console.warn('[popup] Failed to sync pinned search result:', pinnedError);
+      } catch (favoriteError) {
+        console.warn('[popup] Failed to refresh favorites after URL update:', favoriteError);
       }
 
       // Update the DOM element
@@ -1997,8 +2080,12 @@ async function initializeBookmarksSearch(
   /** @type {number} */
   let highlightedCustomSearchIndex = -1;
 
-  // Initial render of pinned items
-  void renderPinnedItems();
+  // Initial render of favorite items
+  try {
+    await refreshFavoriteItems();
+  } catch (error) {
+    console.warn('[popup] Failed to load favorites:', error);
+  }
 
   // Fetch and cache custom search engines once on initialization
   let customSearchEngines = [];
@@ -2206,19 +2293,17 @@ async function initializeBookmarksSearch(
         'group p-2 hover:bg-base-300 cursor-pointer rounded-md';
       resultItem.dataset.index = String(index);
 
-      let title, url, typeIcon, itemType;
+      let title, url, typeIcon;
       let sourceChip = '';
       let secondaryChip = '';
 
       if (result.type === 'raindrop') {
         const item = result.data;
-        itemType = 'raindrop';
         title = item.title || item.link;
         url = item.link;
         typeIcon = '💧';
       } else if (result.type === 'raindrop-collection') {
         const collection = result.data;
-        itemType = 'raindrop-collection';
         title = collection.title || 'Untitled';
         if (typeof collection.count === 'number') {
           title += ` (${collection.count})`;
@@ -2252,13 +2337,18 @@ async function initializeBookmarksSearch(
         result.type === 'raindrop'
           ? `<button class="edit-raindrop-button btn btn-ghost btn-xs hidden group-hover:inline-flex transition-opacity h-[18px] ml-1 duration-200" title="Update URL to current tab">✏️</button>`
           : '';
+      const leadingVisualHtml =
+        result.type === 'raindrop'
+          ? `<div class="relative w-4 h-4">
+              <span class="icon absolute inset-0 transition-opacity duration-200 group-hover:opacity-0">${typeIcon}</span>
+              <button class="pin-button btn btn-ghost btn-xs absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -ml-[2px] -mt-[2px]"
+                data-raindrop-id="${escapeHtml(String(result.data._id || ''))}">📌</button>
+            </div>`
+          : `<span>${typeIcon}</span>`;
 
       resultItem.innerHTML = `
         <div class="flex items-center gap-1">
-          <div class="relative w-4 h-4">
-            <span class="icon absolute inset-0 transition-opacity duration-200 group-hover:opacity-0">${typeIcon}</span>
-            <button class="pin-button btn btn-ghost btn-xs absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -ml-[2px] -mt-[2px]">📌</button>
-          </div>
+          ${leadingVisualHtml}
           <span class="flex-1 truncate">${escapeHtml(title)}</span>
           ${sourceChip}
           ${secondaryChip}
@@ -2293,13 +2383,19 @@ async function initializeBookmarksSearch(
         void openBookmark(itemUrl);
       });
 
+      if (result.type === 'raindrop') {
+        resultItem.dataset.raindropId = String(result.data._id || '');
+      }
+
       const pinButton = resultItem.querySelector('.pin-button');
-      if (pinButton) {
+      if (pinButton instanceof HTMLButtonElement && result.type === 'raindrop') {
+        setFavoriteButtonState(
+          pinButton,
+          favoriteItemIds.has(String(result.data._id || '')),
+        );
         pinButton.addEventListener('click', (e) => {
           e.stopPropagation();
-          // Read URL from data attribute to get the latest value
-          const itemUrl = resultItem.dataset.url || url;
-          void pinItem({ title, url: itemUrl, type: itemType });
+          void toggleFavoriteItem(result.data, pinButton);
         });
       }
 
@@ -2859,14 +2955,13 @@ async function initializeBookmarksSearch(
       event.preventDefault();
     }
 
-    const pinnedItemIndex = getPinnedItemIndexFromEvent(event);
-    if (pinnedItemIndex >= 0) {
+    const favoriteItemIndex = getFavoriteItemIndexFromEvent(event);
+    if (favoriteItemIndex >= 0) {
       event.preventDefault();
       event.stopPropagation();
 
-      const pinnedItems = await getPinnedItems();
-      if (pinnedItemIndex < pinnedItems.length) {
-        const item = pinnedItems[pinnedItemIndex];
+      if (favoriteItemIndex < favoriteItems.length) {
+        const item = favoriteItems[favoriteItemIndex];
         void openBookmark(item.url);
       }
       return;
@@ -2889,4 +2984,35 @@ async function initializeBookmarksSearch(
     event.stopPropagation();
     void matchedShortcut.handler();
   }, true);
+}
+
+// Initialize after module declarations so startup paths can use all constants.
+if (bookmarksSearchInput && bookmarksSearchResults && customSearchSuggestions) {
+  void initializeBookmarksSearch(
+    bookmarksSearchInput,
+    bookmarksSearchResults,
+    customSearchSuggestions,
+  );
+}
+
+if (!statusMessage) {
+  console.error('[popup] Status element not found.');
+}
+
+void loadAndRenderShortcuts();
+void refreshMatchingRunCodeSection();
+
+if (chrome?.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace !== 'local') {
+      return;
+    }
+
+    if (changes[STORAGE_KEY]) {
+      void loadAndRenderShortcuts();
+    }
+    if (changes[RUN_CODE_IN_PAGE_RULES_STORAGE_KEY]) {
+      void refreshMatchingRunCodeSection();
+    }
+  });
 }

@@ -129,6 +129,8 @@ export {
   handleOpenAllItemsInCollection,
   fetchAllItemsInCollection,
   handleUpdateRaindropUrl,
+  handleGetRaindropFavorites,
+  handleSetRaindropFavorite,
 };
 
 /**
@@ -321,6 +323,69 @@ async function handleUpdateRaindropUrl(id, url) {
   });
 
   return { success: true };
+}
+
+/**
+ * Load all Raindrop favorite items.
+ * @returns {Promise<{items: any[]}>}
+ */
+async function handleGetRaindropFavorites() {
+  const tokens = await loadValidProviderTokens();
+  if (!tokens) {
+    return { items: [] };
+  }
+
+  /** @type {any[]} */
+  const items = [];
+  let page = 0;
+
+  while (true) {
+    const response = await raindropRequest(
+      `/raindrops/0?perpage=${FETCH_PAGE_SIZE}&page=${page}&sort=-created`,
+      tokens,
+    );
+    const pageItems = Array.isArray(response?.items) ? response.items : [];
+    items.push(
+      ...pageItems.filter((item) => item && item.important === true),
+    );
+
+    if (pageItems.length < FETCH_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { items };
+}
+
+/**
+ * Mark or unmark a Raindrop item as favorite.
+ * @param {number | string} id
+ * @param {boolean} important
+ * @returns {Promise<{success: boolean, important: boolean}>}
+ */
+async function handleSetRaindropFavorite(id, important) {
+  const tokens = await loadValidProviderTokens();
+  if (!tokens) {
+    throw new Error('No Raindrop connection found');
+  }
+  const numericId = Number(id);
+  if (!Number.isFinite(numericId)) {
+    throw new Error('Invalid Raindrop item ID');
+  }
+
+  await raindropRequest(`/raindrop/${numericId}`, tokens, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      important: Boolean(important),
+    }),
+  });
+
+  return { success: true, important: Boolean(important) };
 }
 
 

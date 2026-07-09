@@ -127,17 +127,55 @@ body.save-to-unsorted-dialog-open {
   background: color-mix(in oklch, var(--nenya-accent) 12%, var(--color-base-200));
 }
 
-#pinnedItemsContainer .badge {
+#favoritesContainer .badge {
   border-radius: 999px;
   box-shadow: 0 5px 14px rgb(0 0 0 / 0.08);
 }
 
-#pinnedItemsContainer .unpin-button {
+#favoritesContainer .unpin-button {
   opacity: 0.65;
 }
 
-#pinnedItemsContainer .badge:hover .unpin-button {
+#favoritesContainer .badge:hover .unpin-button {
   opacity: 1;
+}
+
+.pin-button.is-favorite {
+  opacity: 1;
+  color: #b45309;
+}
+
+.favorites-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.45rem;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-200) 72%, transparent);
+  color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.favorites-loading.hidden {
+  display: none;
+}
+
+.favorites-loading-spinner {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: favorites-loading-spinner 0.8s linear infinite;
+}
+
+@keyframes favorites-loading-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 #statusMessage {
@@ -160,15 +198,7 @@ body.save-to-unsorted-dialog-open {
   display: flex;
 }
 
-/* Drag and drop for pinned search results */
-#pinnedItemsContainer {
+/* Favorites chips */
+#favoritesContainer {
   user-select: none;
-}
-
-#pinnedItemsContainer .badge {
-  cursor: grab;
-}
-
-#pinnedItemsContainer .badge:active {
-  cursor: grabbing;
 }

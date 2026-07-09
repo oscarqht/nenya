@@ -6,6 +6,8 @@ import {
   handleRaindropSearch,
   handleOpenAllItemsInCollection,
   handleUpdateRaindropUrl,
+  handleGetRaindropFavorites,
+  handleSetRaindropFavorite,
 } from './mirror.js';
 
 import {
@@ -55,6 +57,8 @@ const GET_CURRENT_TAB_ID_MESSAGE = 'getCurrentTabId';
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
 const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
+const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
+const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
@@ -1572,6 +1576,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => {
         console.error('[background] Update Raindrop URL failed:', error);
         sendResponse({ ok: false, error: error.message });
+      });
+    return true;
+  }
+
+  if (message.type === GET_RAINDROP_FAVORITES_MESSAGE) {
+    handleGetRaindropFavorites()
+      .then((result) => {
+        sendResponse({
+          ok: true,
+          items: Array.isArray(result?.items) ? result.items : [],
+        });
+      })
+      .catch((error) => {
+        console.error('[background] Load Raindrop favorites failed:', error);
+        sendResponse({
+          ok: false,
+          items: [],
+          error: error instanceof Error ? error.message : 'Failed to load favorites.',
+        });
+      });
+    return true;
+  }
+
+  if (message.type === SET_RAINDROP_FAVORITE_MESSAGE) {
+    const { id, important } = message;
+    handleSetRaindropFavorite(id, Boolean(important))
+      .then((result) => {
+        sendResponse({ ok: true, ...result });
+      })
+      .catch((error) => {
+        console.error('[background] Update Raindrop favorite failed:', error);
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : 'Failed to update favorite.',
+        });
       });
     return true;
   }
