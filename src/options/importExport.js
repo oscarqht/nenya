@@ -242,30 +242,47 @@ function isValidUrlPattern(pattern) {
  * Show a toast via Toastify when available.
  * @param {string} message
  * @param {ToastVariant} [variant='info']
+ * @param {{ linkUrl?: string, linkText?: string }} [options] - Optional link
+ *   appended to the toast (e.g. a Google Drive folder link).
  * @returns {void}
  */
-function showToast(message, variant = 'info') {
+export function showToast(message, variant = 'info', options = {}) {
   /** @type {{ Toastify?: (options: any) => { showToast: () => void } }} */
   const windowWithToastify = /** @type {any} */ (window);
   const background =
     TOAST_BACKGROUND_BY_VARIANT[variant] || TOAST_BACKGROUND_BY_VARIANT.info;
   if (typeof windowWithToastify.Toastify === 'function') {
-    windowWithToastify
-      .Toastify({
-        text: message,
-        duration: 4000,
-        gravity: 'top',
-        position: 'right',
-        close: true,
-        style: { background },
-      })
-      .showToast();
+    /** @type {Record<string, any>} */
+    const toastOptions = {
+      duration: options.linkUrl ? 8000 : 4000,
+      gravity: 'top',
+      position: 'right',
+      close: true,
+      style: { background },
+    };
+    if (options.linkUrl) {
+      // Build a DOM node so the link is safe from HTML injection.
+      const node = document.createElement('span');
+      node.appendChild(document.createTextNode(message + ' '));
+      const link = document.createElement('a');
+      link.href = options.linkUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = options.linkText || 'Open';
+      link.style.color = '#ffffff';
+      link.style.textDecoration = 'underline';
+      node.appendChild(link);
+      toastOptions.node = node;
+    } else {
+      toastOptions.text = message;
+    }
+    windowWithToastify.Toastify(toastOptions).showToast();
     return;
   }
   // Fallback
   try {
     // eslint-disable-next-line no-alert
-    alert(message);
+    alert(options.linkUrl ? message + ' ' + options.linkUrl : message);
   } catch (_) {
     // ignore
   }
@@ -733,12 +750,25 @@ function downloadJson(data, filename) {
 }
 
 /**
- * Export current options to a JSON file.
- * @returns {Promise<void>}
+ * Build the export payload from current options. Transport-agnostic — used by
+ * both the local-file export and the Google Drive backup.
+ * @returns {Promise<ExportFile>}
  */
-async function handleExportClick() {
-  try {
-    const {
+export async function buildExportPayload() {
+  const {
+    autoReloadRules,
+    customCodeRules,
+    runCodeInPageRules,
+    autoGoogleLoginRules,
+    pinnedShortcuts,
+    pinnedSearchResults,
+    customSearchEngines,
+  } = await readCurrentOptions();
+  /** @type {ExportFile} */
+  const payload = {
+    version: EXPORT_VERSION,
+    data: {
+      provider: PROVIDER_ID,
       autoReloadRules,
       customCodeRules,
       runCodeInPageRules,
@@ -746,21 +776,71 @@ async function handleExportClick() {
       pinnedShortcuts,
       pinnedSearchResults,
       customSearchEngines,
-    } = await readCurrentOptions();
-    /** @type {ExportFile} */
-    const payload = {
-      version: EXPORT_VERSION,
-      data: {
-        provider: PROVIDER_ID,
-        autoReloadRules,
-        customCodeRules,
-        runCodeInPageRules,
-        autoGoogleLoginRules,
-        pinnedShortcuts,
-        pinnedSearchResults,
-        customSearchEngines,
-      },
-    };
+    },
+  };
+  return payload;
+}
+
+/**
+ * Validate and apply a parsed export payload to storage. Transport-agnostic —
+ * used by both the local-file import and the Google Drive restore. Dispatches
+ * the `nenya-options-imported` event on success. Throws on invalid input.
+ * @param {unknown} parsed - Parsed JSON (either the full ExportFile or its data)
+ * @returns {Promise<void>}
+ */
+export async function applyExportPayload(parsed) {
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid file.');
+  }
+
+  /** @type {any} */
+  const data = /** @type {any} */ (parsed).data ?? parsed;
+  const provider =
+    typeof data?.provider === 'string' ? data.provider : PROVIDER_ID;
+  if (provider !== PROVIDER_ID) {
+    throw new Error('Unsupported provider in file.');
+  }
+
+  const autoReloadRules = /** @type {AutoReloadRuleSettings[]} */ (
+    data.autoReloadRules
+  );
+  const customCodeRules = /** @type {CustomCodeRuleSettings[]} */ (
+    data.customCodeRules || []
+  );
+  const runCodeInPageRules = /** @type {RunCodeInPageRuleSettings[]} */ (
+    data.runCodeInPageRules || []
+  );
+  const autoGoogleLoginRules = /** @type {AutoGoogleLoginRuleSettings[]} */ (
+    data.autoGoogleLoginRules || []
+  );
+  const pinnedShortcuts = /** @type {string[]} */ (data.pinnedShortcuts || []);
+  const pinnedSearchResults = /** @type {any[]} */ (
+    data.pinnedSearchResults || []
+  );
+  const customSearchEngines =
+    /** @type {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} */ (
+      data.customSearchEngines || []
+    );
+
+  await applyImportedOptions(
+    autoReloadRules,
+    customCodeRules,
+    runCodeInPageRules,
+    autoGoogleLoginRules,
+    pinnedShortcuts,
+    pinnedSearchResults,
+    customSearchEngines,
+  );
+  document.dispatchEvent(new CustomEvent('nenya-options-imported'));
+}
+
+/**
+ * Export current options to a JSON file.
+ * @returns {Promise<void>}
+ */
+async function handleExportClick() {
+  try {
+    const payload = await buildExportPayload();
     const now = new Date();
     const YYYY = String(now.getFullYear());
     const MM = String(now.getMonth() + 1).padStart(2, '0');
@@ -840,51 +920,7 @@ async function handleFileChosen() {
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error('Invalid file.');
-    }
-
-    /** @type {any} */
-    const data = parsed.data ?? parsed;
-    const provider =
-      typeof data?.provider === 'string' ? data.provider : PROVIDER_ID;
-    if (provider !== PROVIDER_ID) {
-      throw new Error('Unsupported provider in file.');
-    }
-
-    const autoReloadRules = /** @type {AutoReloadRuleSettings[]} */ (
-      data.autoReloadRules
-    );
-    const customCodeRules = /** @type {CustomCodeRuleSettings[]} */ (
-      data.customCodeRules || []
-    );
-    const runCodeInPageRules = /** @type {RunCodeInPageRuleSettings[]} */ (
-      data.runCodeInPageRules || []
-    );
-    const autoGoogleLoginRules = /** @type {AutoGoogleLoginRuleSettings[]} */ (
-      data.autoGoogleLoginRules || []
-    );
-    const pinnedShortcuts = /** @type {string[]} */ (
-      data.pinnedShortcuts || []
-    );
-    const pinnedSearchResults = /** @type {any[]} */ (
-      data.pinnedSearchResults || []
-    );
-    const customSearchEngines =
-      /** @type {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} */ (
-        data.customSearchEngines || []
-      );
-
-    await applyImportedOptions(
-      autoReloadRules,
-      customCodeRules,
-      runCodeInPageRules,
-      autoGoogleLoginRules,
-      pinnedShortcuts,
-      pinnedSearchResults,
-      customSearchEngines,
-    );
-    document.dispatchEvent(new CustomEvent('nenya-options-imported'));
+    await applyExportPayload(parsed);
     showToast('Options imported successfully.', 'success');
   } catch (error) {
     console.warn('[importExport] Import failed:', error);
