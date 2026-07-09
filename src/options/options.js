@@ -3,6 +3,7 @@ import '../shared/iconUrl.js';
 import './bookmarks.js';
 import './pinnedShortcuts.js';
 import './importExport.js';
+import './googleDriveBackup.js';
 import './autoReload.js';
 import './customCode.js';
 import './runCodeInPage.js';

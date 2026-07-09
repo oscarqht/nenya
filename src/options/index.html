@@ -483,7 +483,7 @@
       backdrop-filter: blur(10px);
       border-radius: 1rem;
       padding: 0.75rem;
-      width: 140px;
+      width: 200px;
     }
 
     .options-floating-actions {
@@ -595,6 +595,65 @@
                   <button id="disconnectButton" class="nenya-btn nenya-btn-danger" type="button" hidden>Logout</button>
                   <div class="flex gap-3 ml-auto">
                   </div>
+                </div>
+              </div>
+
+              <!-- Google Drive Backup -->
+              <div class="options-card">
+                <div class="flex items-center gap-4 mb-6">
+                  <div
+                    class="w-14 h-14 bg-green-100 dark:bg-green-900/30 rounded-2xl flex items-center justify-center text-green-600">
+                    <svg class="w-7 h-7" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+                      <path d="m8 12 3 3 6-6" />
+                      <path d="M16 3h5v5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-bold">Google Drive Backup</h3>
+                    <div id="googleDriveStatusMessage" class="flex items-center gap-2 text-sm text-base-content/70"
+                      role="status" aria-live="polite">Not connected</div>
+                  </div>
+                </div>
+
+                <div class="info-box mb-4">
+                  <div>
+                    Back up and restore your options to your own Google Drive. Create an OAuth
+                    <strong>Web application</strong> client in the
+                    <a href="https://console.cloud.google.com/apis/credentials" target="_blank"
+                      rel="noopener noreferrer" class="underline font-semibold">Google Cloud Console</a>, then:
+                    <ol class="list-decimal ml-5 mt-2 space-y-1">
+                      <li>Enable the <strong>Google Drive API</strong> for your project.</li>
+                      <li>Add this <strong>Authorized redirect URI</strong> to your OAuth client:
+                        <code id="googleDriveRedirectUri"
+                          class="bg-base-300 px-1 rounded break-all select-all">loading…</code>
+                      </li>
+                      <li>Paste your Client ID &amp; Client Secret below and click
+                        <strong>Connect with Google</strong> — the extension will request the
+                        <code class="bg-base-300 px-1 rounded">drive.file</code> scope and store the token.</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div class="space-y-4">
+                  <div>
+                    <label class="form-label" for="googleDriveClientId">Client ID</label>
+                    <input id="googleDriveClientId" class="nenya-input font-mono text-sm" type="text"
+                      autocomplete="off" placeholder="xxxxxx.apps.googleusercontent.com">
+                  </div>
+                  <div>
+                    <label class="form-label" for="googleDriveClientSecret">Client Secret</label>
+                    <input id="googleDriveClientSecret" class="nenya-input font-mono text-sm" type="password"
+                      autocomplete="off" placeholder="Your OAuth client secret">
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap gap-3 mt-6 pt-6 border-t border-base-300">
+                  <button id="googleDriveConnectButton" class="nenya-btn nenya-btn-primary" type="button">Connect with
+                    Google</button>
+                  <button id="googleDriveDisconnectButton" class="nenya-btn nenya-btn-danger" type="button"
+                    hidden>Disconnect</button>
                 </div>
               </div>
             </div>
@@ -971,6 +1030,10 @@ const data = await res.json();</code></pre>
       <button id="optionsFloatingImportButton" class="nenya-btn nenya-btn-ghost floating-btn" type="button">📁
         Import</button>
       <input id="optionsFloatingImportFileInput" type="file" accept="application/json" class="hidden" />
+      <button id="optionsFloatingDriveExportButton" class="nenya-btn nenya-btn-ghost floating-btn" type="button">☁️
+        Save to Drive</button>
+      <button id="optionsFloatingDriveImportButton" class="nenya-btn nenya-btn-ghost floating-btn" type="button">☁️
+        Restore from Drive</button>
     </div>
   </div>
 
