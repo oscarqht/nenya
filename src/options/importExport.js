@@ -177,6 +177,49 @@ const TOAST_BACKGROUND_BY_VARIANT = {
   info: 'linear-gradient(135deg, #3b82f6, #2563eb)',
 };
 
+const MAX_PINNED_SHORTCUTS = 7;
+const DEFAULT_PINNED_SHORTCUTS = [
+  'getMarkdown',
+  'saveUnsorted',
+  'encryptSave',
+  'saveClipboardToUnsorted',
+  'emojiPicker',
+];
+const AVAILABLE_PINNED_SHORTCUT_IDS = new Set([
+  'getMarkdown',
+  'saveUnsorted',
+  'encryptSave',
+  'saveClipboardToUnsorted',
+  'importCustomCode',
+  'autoReload',
+  'customCode',
+  'takeScreenshot',
+  'screenRecording',
+  'emojiPicker',
+]);
+
+/**
+ * Generate a unique identifier for imported/exported rules when missing.
+ * @returns {string}
+ */
+function generateRuleId() {
+  if (typeof crypto?.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const random = Math.random().toString(36).slice(2);
+  return 'rule-' + Date.now().toString(36) + '-' + random;
+}
+
+/**
+ * Deep clone plain JSON-like values.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function clonePreferences(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 /**
  * Validate a URLPattern-compatible pattern.
  * @param {string} pattern
@@ -308,6 +351,316 @@ function normalizePreferences(value) {
           : fallback.clipboard.copySuccess,
     },
   };
+}
+
+/**
+ * Normalize auto reload rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<AutoReloadRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeAutoReloadRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, intervalSeconds?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const intervalCandidate = Math.floor(Number(raw.intervalSeconds));
+    const intervalSeconds =
+      Number.isFinite(intervalCandidate) && intervalCandidate > 0
+        ? Math.max(MIN_RULE_INTERVAL_SECONDS, intervalCandidate)
+        : MIN_RULE_INTERVAL_SECONDS;
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      intervalSeconds,
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<AutoReloadRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize custom code rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<CustomCodeRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeCustomCodeRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, css?: unknown, js?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      css: typeof raw.css === 'string' ? raw.css : '',
+      js: typeof raw.js === 'string' ? raw.js : '',
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<CustomCodeRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize run code in page rules for import/export.
+ * @param {unknown} value
+ * @returns {RunCodeInPageRuleSettings[]}
+ */
+function normalizeRunCodeInPageRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, title?: unknown, patterns?: unknown, code?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    if (!title) {
+      return rules;
+    }
+
+    const patterns = Array.isArray(raw.patterns)
+      ? raw.patterns.filter(
+          (pattern) =>
+            typeof pattern === 'string' && isValidUrlPattern(pattern.trim()),
+        )
+      : [];
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    /** @type {RunCodeInPageRuleSettings} */
+    const rule = {
+      id,
+      title,
+      patterns,
+      code: typeof raw.code === 'string' ? raw.code : '',
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {RunCodeInPageRuleSettings[]} */ ([]));
+}
+
+/**
+ * Normalize auto Google login rules for import/export.
+ * @param {unknown} value
+ * @returns {Array<AutoGoogleLoginRuleSettings & { disabled?: boolean }>}
+ */
+function normalizeAutoGoogleLoginRules(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((rules, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return rules;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, pattern?: unknown, email?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
+        entry
+      );
+    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
+    if (!isValidUrlPattern(pattern)) {
+      return rules;
+    }
+
+    const id = typeof raw.id === 'string' && raw.id.trim()
+      ? raw.id.trim()
+      : generateRuleId();
+
+    const rule = {
+      id,
+      pattern,
+      disabled: !!raw.disabled,
+    };
+    if (typeof raw.email === 'string' && raw.email.trim()) {
+      rule.email = raw.email.trim();
+    }
+    if (typeof raw.createdAt === 'string') {
+      rule.createdAt = raw.createdAt;
+    }
+    if (typeof raw.updatedAt === 'string') {
+      rule.updatedAt = raw.updatedAt;
+    }
+
+    rules.push(rule);
+    return rules;
+  }, /** @type {Array<AutoGoogleLoginRuleSettings & { disabled?: boolean }>} */ ([]));
+}
+
+/**
+ * Normalize pinned shortcuts for import/export.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function normalizePinnedShortcuts(value) {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_PINNED_SHORTCUTS];
+  }
+
+  const deduped = [];
+  for (const item of value) {
+    if (
+      typeof item !== 'string' ||
+      item === 'openOptions' ||
+      !AVAILABLE_PINNED_SHORTCUT_IDS.has(item) ||
+      deduped.includes(item)
+    ) {
+      continue;
+    }
+    deduped.push(item);
+    if (deduped.length >= MAX_PINNED_SHORTCUTS) {
+      break;
+    }
+  }
+
+  return deduped.length > 0 ? deduped : [...DEFAULT_PINNED_SHORTCUTS];
+}
+
+/**
+ * Normalize pinned search results for import/export.
+ * @param {unknown} value
+ * @returns {Array<{title: string, url: string, type: string}>}
+ */
+function normalizePinnedSearchResults(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce((items, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return items;
+    }
+
+    const raw =
+      /** @type {{ title?: unknown, url?: unknown, type?: unknown }} */ (entry);
+    const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+    const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+    if (!title || !url) {
+      return items;
+    }
+
+    items.push({
+      title,
+      url,
+      type: typeof raw.type === 'string' ? raw.type : '',
+    });
+    return items;
+  }, /** @type {Array<{title: string, url: string, type: string}>} */ ([]));
+}
+
+/**
+ * Normalize custom search engines for import/export.
+ * @param {unknown} value
+ * @returns {Array<{id: string, name: string, shortcut: string, searchUrl: string}>}
+ */
+function normalizeCustomSearchEngines(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenShortcuts = new Set();
+  return value.reduce((engines, entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return engines;
+    }
+
+    const raw =
+      /** @type {{ id?: unknown, name?: unknown, shortcut?: unknown, searchUrl?: unknown }} */ (
+        entry
+      );
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    const shortcut =
+      typeof raw.shortcut === 'string' ? raw.shortcut.trim() : '';
+    const searchUrl =
+      typeof raw.searchUrl === 'string' ? raw.searchUrl.trim() : '';
+    if (!name || !shortcut || !searchUrl || !searchUrl.includes('%s')) {
+      return engines;
+    }
+
+    const normalizedShortcut = shortcut.toLowerCase();
+    if (seenShortcuts.has(normalizedShortcut)) {
+      return engines;
+    }
+    seenShortcuts.add(normalizedShortcut);
+
+    engines.push({
+      id:
+        typeof raw.id === 'string' && raw.id.trim()
+          ? raw.id.trim()
+          : 'se-' + Date.now().toString(36) + '-' + engines.length,
+      name,
+      shortcut,
+      searchUrl,
+    });
+    return engines;
+  }, /** @type {Array<{id: string, name: string, shortcut: string, searchUrl: string}>} */ ([]));
 }
 
 /**
