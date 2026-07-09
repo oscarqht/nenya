@@ -291,6 +291,23 @@ async function saveScreenshotPreferenceForHostname(
 }
 
 /**
+ * Close a browser tab by id when possible.
+ * @param {number | undefined} tabId
+ * @returns {Promise<void>}
+ */
+async function closeTabById(tabId) {
+  if (typeof tabId !== 'number') {
+    return;
+  }
+
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch (error) {
+    console.warn('[popup] Failed to close tab after save:', error);
+  }
+}
+
+/**
  * Show the save to Unsorted dialog.
  * @param {any} tab
  * @returns {Promise<void>}
@@ -359,6 +376,9 @@ export async function showSaveToUnsortedDialog(tab) {
         entries,
       });
       handleSaveResponse(response, /** @type {HTMLElement} */ (document.getElementById('statusMessage')));
+      if (response?.ok) {
+        await closeTabById(tab.id);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       concludeStatus(message, 'error', 3000, /** @type {HTMLElement} */ (document.getElementById('statusMessage')));

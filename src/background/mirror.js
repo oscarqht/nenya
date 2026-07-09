@@ -299,7 +299,7 @@ async function handleOpenAllItemsInCollection(collectionId, collectionTitle) {
  * Update the URL of a Raindrop item.
  * @param {number} id - The Raindrop item ID
  * @param {string} url - The new URL
- * @returns {Promise<{success: boolean}>}
+ * @returns {Promise<{success: boolean, url: string}>}
  */
 async function handleUpdateRaindropUrl(id, url) {
   const tokens = await loadValidProviderTokens();
@@ -322,7 +322,7 @@ async function handleUpdateRaindropUrl(id, url) {
     }),
   });
 
-  return { success: true };
+  return { success: true, url: finalUrl };
 }
 
 /**

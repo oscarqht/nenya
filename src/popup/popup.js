@@ -356,6 +356,10 @@ let favoriteItems = [];
 let favoriteItemIds = new Set();
 /** @type {number} */
 let favoriteItemsRenderToken = 0;
+/** @type {number} */
+let favoriteItemsMutationToken = 0;
+/** @type {Promise<void>} */
+let favoriteItemsCacheUpdateQueue = Promise.resolve();
 
 // Keep references to buttons for backward compatibility
 let getMarkdownButton = null;
@@ -1161,7 +1165,8 @@ function setFavoriteButtonState(button, isFavorite) {
     button.classList.add('opacity-0', 'group-hover:opacity-100');
   }
 
-  const icon = button.parentElement?.querySelector('.icon');
+  const visualContainer = button.closest('.favorite-toggle-visual');
+  const icon = visualContainer?.querySelector('.icon');
   if (icon instanceof HTMLElement) {
     icon.classList.toggle('opacity-0', isFavorite);
   }
@@ -1217,14 +1222,71 @@ async function getFavoriteItemsCache() {
 /**
  * Cache favorite items for fast popup startup.
  * @param {any[]} items
+ * @param {{fetchedAt?: number}} [options]
  * @returns {Promise<void>}
  */
-async function saveFavoriteItemsCache(items) {
+async function saveFavoriteItemsCache(items, options) {
+  const normalizedItems = normalizeFavoriteItems(items);
+  const fetchedAt =
+    typeof options?.fetchedAt === 'number' ? options.fetchedAt : Date.now();
   await chrome.storage.local.set({
     [FAVORITE_ITEMS_CACHE_STORAGE_KEY]: {
-      items: Array.isArray(items) ? items : [],
-      fetchedAt: Date.now(),
+      items: normalizedItems,
+      fetchedAt,
     },
+  });
+}
+
+/**
+ * Persist and rerender favorite items.
+ * @param {any[]} items
+ * @param {{fetchedAt?: number}} [options]
+ * @returns {Promise<Array<{id: string, title: string, url: string}>>}
+ */
+async function applyFavoriteItemsCache(items, options) {
+  return enqueueFavoriteItemsCacheUpdate(async () => {
+    const normalizedItems = normalizeFavoriteItems(items);
+    await saveFavoriteItemsCache(normalizedItems, options);
+    await renderFavoriteItems(normalizedItems);
+    return normalizedItems;
+  });
+}
+
+/**
+ * Serialize favorite-cache writes so rapid UI actions do not clobber each other.
+ * @template T
+ * @param {() => Promise<T>} update
+ * @returns {Promise<T>}
+ */
+function enqueueFavoriteItemsCacheUpdate(update) {
+  const nextUpdate = favoriteItemsCacheUpdateQueue.then(update, update);
+  favoriteItemsCacheUpdateQueue = nextUpdate.then(
+    () => undefined,
+    () => undefined,
+  );
+  return nextUpdate;
+}
+
+/**
+ * Mutate the current favorite items cache without forcing a full refetch.
+ * Local mutations keep the prior fetch timestamp so stale caches still expire
+ * on schedule and get replaced by the next server refresh.
+ * @param {(items: Array<{id: string, title: string, url: string}>) => any[]} mutator
+ * @returns {Promise<Array<{id: string, title: string, url: string}>>}
+ */
+async function mutateFavoriteItemsCache(mutator) {
+  favoriteItemsMutationToken += 1;
+  return enqueueFavoriteItemsCacheUpdate(async () => {
+    const cache = await getFavoriteItemsCache();
+    const baseItems = cache.hasCache
+      ? normalizeFavoriteItems(cache.items)
+      : normalizeFavoriteItems(favoriteItems);
+    const nextItems = normalizeFavoriteItems(mutator([...baseItems]));
+    await saveFavoriteItemsCache(nextItems, {
+      fetchedAt: cache.hasCache ? cache.fetchedAt : 0,
+    });
+    await renderFavoriteItems(nextItems);
+    return nextItems;
   });
 }
 
@@ -1255,11 +1317,13 @@ async function refreshFavoriteItems(options) {
   }
 
   setFavoritesLoading(true);
+  const mutationTokenAtFetchStart = favoriteItemsMutationToken;
   try {
     const items = await fetchFavoriteItems();
-    await saveFavoriteItemsCache(items);
-    await renderFavoriteItems(items);
-    return items;
+    if (mutationTokenAtFetchStart !== favoriteItemsMutationToken) {
+      return favoriteItems;
+    }
+    return applyFavoriteItemsCache(items);
   } finally {
     setFavoritesLoading(false);
   }
@@ -1299,7 +1363,21 @@ async function toggleFavoriteItem(item, button) {
 
   try {
     await setRaindropFavorite(requestId, willFavorite);
-    await refreshFavoriteItems({ forceFetch: true });
+    await mutateFavoriteItemsCache((items) => {
+      if (!willFavorite) {
+        return items.filter((favorite) => favorite.id !== favoriteId);
+      }
+
+      const normalizedItem = normalizeFavoriteItems([item])[0];
+      if (!normalizedItem) {
+        throw new Error('Missing Raindrop item details for favorite update');
+      }
+
+      const remainingItems = items.filter(
+        (favorite) => favorite.id !== normalizedItem.id,
+      );
+      return [normalizedItem, ...remainingItems];
+    });
     if (statusMessage) {
       concludeStatus(
         willFavorite ? 'Added to favorites' : 'Removed from favorites',
@@ -1351,13 +1429,17 @@ async function renderFavoriteItems(items) {
     const faviconSource = getPinnedFaviconSource(item.url);
     const chip = document.createElement('div');
     chip.className =
-      'badge gap-2 cursor-pointer hover:opacity-80 pr-1 border-none transition-all duration-200';
+      'badge group gap-2 cursor-pointer hover:opacity-80 pr-1 border-none transition-all duration-200';
     chip.style.backgroundColor = colors.bg;
     chip.style.color = colors.text;
     chip.innerHTML = `
-      <span class="text-[10px] opacity-70 font-bold pointer-events-none">${
-        index + 1
-      }</span>
+      <div class="relative w-4 h-4 shrink-0 favorite-index-visual">
+        <span class="favorite-index-label absolute inset-0 flex items-center justify-center text-[10px] opacity-70 font-bold pointer-events-none transition-opacity duration-200 group-hover:opacity-0">${
+          index + 1
+        }</span>
+        <button class="update-raindrop-url-button btn btn-ghost btn-xs absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -ml-[2px] -mt-[2px]"
+          title="Update URL to current tab" style="color: inherit">✏️</button>
+      </div>
       <img class="pinned-result-favicon w-4 h-4 rounded-sm shrink-0 pointer-events-none" alt="" aria-hidden="true" />
       <span class="pinned-result-favicon-emoji text-sm leading-none shrink-0 pointer-events-none hidden" aria-hidden="true"></span>
       <span class="truncate max-w-xs pointer-events-none">${escapeHtml(
@@ -1389,11 +1471,28 @@ async function renderFavoriteItems(items) {
       }
     }
     chip.addEventListener('click', (e) => {
-      if (e.target instanceof Element && e.target.classList.contains('unpin-button')) {
+      if (
+        e.target instanceof Element &&
+        (
+          e.target.closest('.unpin-button') ||
+          e.target.closest('.update-raindrop-url-button')
+        )
+      ) {
         return;
       }
       void openBookmark(item.url);
     });
+    const editButton = chip.querySelector('.update-raindrop-url-button');
+    if (editButton instanceof HTMLButtonElement) {
+      editButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void handleEditRaindropUrl(
+          { _id: item.id, link: item.url, title: item.title },
+          editButton,
+          { favoriteItem: item },
+        );
+      });
+    }
     const unpinButton = chip.querySelector('.unpin-button');
     if (unpinButton) {
       unpinButton.addEventListener('click', (e) => {
@@ -1412,24 +1511,30 @@ async function renderFavoriteItems(items) {
  * Handle updating a Raindrop item's URL to the current tab's URL.
  * @param {any} item
  * @param {HTMLButtonElement} button
- * @param {HTMLElement} resultItem
- * @param {Array<{type: string, data: any}>} currentResults
+ * @param {{
+ *   resultItem?: HTMLElement | null,
+ *   currentResults?: Array<{type: string, data: any}>,
+ *   favoriteItem?: {id: string, title: string, url: string} | null,
+ * }} [options]
  */
-async function handleEditRaindropUrl(item, button, resultItem, currentResults) {
+async function handleEditRaindropUrl(item, button, options) {
   if (button.classList.contains('loading')) return;
 
+  const resultItem = options?.resultItem || null;
+  const currentResults = Array.isArray(options?.currentResults)
+    ? options.currentResults
+    : null;
+  const favoriteItem = options?.favoriteItem || null;
   const originalContent = button.innerHTML;
   button.innerHTML = '<span class="loading loading-spinner loading-[10px]"></span>';
   button.classList.add('loading');
 
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const currentTab = tabs?.[0];
+    const currentTab = await getActivePopupTab();
     if (!currentTab || !currentTab.url) {
       throw new Error('No active tab URL found');
     }
 
-    const oldUrl = item.link;
     const newUrl = currentTab.url;
 
     const response = await chrome.runtime.sendMessage({
@@ -1439,38 +1544,55 @@ async function handleEditRaindropUrl(item, button, resultItem, currentResults) {
     });
 
     if (response && response.ok) {
-      // Update the item's link property in the stored data
-      item.link = newUrl;
+      const updatedUrl =
+        typeof response.url === 'string' && response.url
+          ? response.url
+          : newUrl;
 
-      try {
-        if (favoriteItemIds.has(String(item._id))) {
-          await refreshFavoriteItems({ forceFetch: true });
+      // Update the item's link property in the stored data
+      item.link = updatedUrl;
+      if (favoriteItem) {
+        favoriteItem.url = updatedUrl;
+      }
+
+      if (favoriteItemIds.has(String(item._id))) {
+        try {
+          await mutateFavoriteItemsCache((items) =>
+            items.map((favorite) =>
+              favorite.id === String(item._id)
+                ? { ...favorite, url: updatedUrl }
+                : favorite,
+            ),
+          );
+        } catch (favoriteError) {
+          console.warn(
+            '[popup] Failed to update favorites cache after URL update:',
+            favoriteError,
+          );
         }
-      } catch (favoriteError) {
-        console.warn('[popup] Failed to refresh favorites after URL update:', favoriteError);
       }
 
       // Update the DOM element
       if (resultItem) {
         // Update the data-url attribute (used by click handler)
         const htmlElement = /** @type {HTMLElement} */ (resultItem);
-        htmlElement.dataset.url = newUrl;
+        htmlElement.dataset.url = updatedUrl;
 
         // Update the displayed truncated URL
         const urlDisplay = resultItem.querySelector('.search-result-url');
         if (urlDisplay) {
           // Calculate truncated URL (max 60 chars)
-          const truncatedUrl = newUrl.length <= 60
-            ? newUrl
-            : newUrl.substring(0, 57) + '...';
+          const truncatedUrl = updatedUrl.length <= 60
+            ? updatedUrl
+            : updatedUrl.substring(0, 57) + '...';
           urlDisplay.textContent = truncatedUrl;
-        } else if (newUrl && !newUrl.startsWith('folder:')) {
+        } else if (updatedUrl && !updatedUrl.startsWith('folder:')) {
           // If URL display doesn't exist but should, create it
           const urlDiv = document.createElement('div');
           urlDiv.className = 'text-[10px] text-base-content/60 truncate mt-1 ml-5 search-result-url';
-          const truncatedUrl = newUrl.length <= 60
-            ? newUrl
-            : newUrl.substring(0, 57) + '...';
+          const truncatedUrl = updatedUrl.length <= 60
+            ? updatedUrl
+            : updatedUrl.substring(0, 57) + '...';
           urlDiv.textContent = truncatedUrl;
           resultItem.appendChild(urlDiv);
         }
@@ -1482,7 +1604,8 @@ async function handleEditRaindropUrl(item, button, resultItem, currentResults) {
           (r) => r.type === 'raindrop' && r.data._id === item._id
         );
         if (resultIndex >= 0) {
-          currentResults[resultIndex].data.link = newUrl;
+          currentResults[resultIndex].data.link = updatedUrl;
+          currentResults[resultIndex].data.url = updatedUrl;
         }
       }
 
@@ -1497,7 +1620,12 @@ async function handleEditRaindropUrl(item, button, resultItem, currentResults) {
     console.error('[popup] Update raindrop URL failed:', error);
     button.innerHTML = '❌';
     if (statusMessage) {
-      concludeStatus('Error: ' + error.message, 'error', 4000, statusMessage);
+      concludeStatus(
+        error instanceof Error ? `Error: ${error.message}` : 'Failed to update URL',
+        'error',
+        4000,
+        statusMessage,
+      );
     }
   } finally {
     setTimeout(() => {
@@ -2333,16 +2461,17 @@ async function initializeBookmarksSearch(
         result.type === 'raindrop-collection'
           ? `<button class="open-all-button btn btn-ghost btn-xs hidden group-hover:inline-flex h-[18px] ml-1" title="Open all items in this collection">🗂️</button>`
           : '';
-      const editButtonHtml =
+      const trailingFavoriteButtonHtml =
         result.type === 'raindrop'
-          ? `<button class="edit-raindrop-button btn btn-ghost btn-xs hidden group-hover:inline-flex transition-opacity h-[18px] ml-1 duration-200" title="Update URL to current tab">✏️</button>`
+          ? `<button class="pin-button btn btn-ghost btn-xs transition-opacity h-[18px] ml-1 opacity-0 group-hover:opacity-100 duration-200"
+                data-raindrop-id="${escapeHtml(String(result.data._id || ''))}">📌</button>`
           : '';
       const leadingVisualHtml =
         result.type === 'raindrop'
-          ? `<div class="relative w-4 h-4">
+          ? `<div class="relative w-4 h-4 favorite-toggle-visual">
               <span class="icon absolute inset-0 transition-opacity duration-200 group-hover:opacity-0">${typeIcon}</span>
-              <button class="pin-button btn btn-ghost btn-xs absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -ml-[2px] -mt-[2px]"
-                data-raindrop-id="${escapeHtml(String(result.data._id || ''))}">📌</button>
+              <button class="update-raindrop-url-button btn btn-ghost btn-xs absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -ml-[2px] -mt-[2px]"
+                title="Update URL to current tab">✏️</button>
             </div>`
           : `<span>${typeIcon}</span>`;
 
@@ -2355,7 +2484,7 @@ async function initializeBookmarksSearch(
           ${collectionChip}
           ${parentCollectionChip}
           ${openAllButtonHtml}
-          ${editButtonHtml}
+          ${trailingFavoriteButtonHtml}
         </div>
         ${
           truncatedUrl
@@ -2373,7 +2502,7 @@ async function initializeBookmarksSearch(
         if (
           (e.target && e.target.closest('.pin-button')) ||
           (e.target && e.target.closest('.open-all-button')) ||
-          (e.target && e.target.closest('.edit-raindrop-button'))
+          (e.target && e.target.closest('.update-raindrop-url-button'))
         )
           return;
 
@@ -2420,12 +2549,14 @@ async function initializeBookmarksSearch(
         });
       }
 
-      const editButton = resultItem.querySelector('.edit-raindrop-button');
-      if (editButton) {
-        const editBtn = /** @type {HTMLButtonElement} */ (editButton);
-        editBtn.addEventListener('click', (e) => {
+      const editButton = resultItem.querySelector('.update-raindrop-url-button');
+      if (editButton instanceof HTMLButtonElement) {
+        editButton.addEventListener('click', (e) => {
           e.stopPropagation();
-          void handleEditRaindropUrl(result.data, editBtn, resultItem, currentResults);
+          void handleEditRaindropUrl(result.data, editButton, {
+            resultItem,
+            currentResults,
+          });
         });
       }
 
@@ -3013,6 +3144,11 @@ if (chrome?.storage?.onChanged) {
     }
     if (changes[RUN_CODE_IN_PAGE_RULES_STORAGE_KEY]) {
       void refreshMatchingRunCodeSection();
+    }
+    if (changes[FAVORITE_ITEMS_CACHE_STORAGE_KEY]) {
+      const nextCache = changes[FAVORITE_ITEMS_CACHE_STORAGE_KEY].newValue;
+      const nextItems = Array.isArray(nextCache?.items) ? nextCache.items : [];
+      void renderFavoriteItems(nextItems);
     }
   });
 }
