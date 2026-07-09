@@ -2208,12 +2208,12 @@ async function initializeBookmarksSearch(
   /** @type {number} */
   let highlightedCustomSearchIndex = -1;
 
-  // Initial render of favorite items
-  try {
-    await refreshFavoriteItems();
-  } catch (error) {
+  // Initial render of favorite items. Fire-and-forget so the Raindrop fetch
+  // does not block registration of the keyboard-shortcut listener below;
+  // renderFavoriteItems updates the shared state the listener reads.
+  void refreshFavoriteItems().catch((error) => {
     console.warn('[popup] Failed to load favorites:', error);
-  }
+  });
 
   // Fetch and cache custom search engines once on initialization
   let customSearchEngines = [];
