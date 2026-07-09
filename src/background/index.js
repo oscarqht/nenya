@@ -62,13 +62,262 @@ const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
+const RUN_CODE_BACKGROUND_FETCH_MESSAGE = 'runCodeInPage:backgroundFetch';
 const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
 const ENCRYPT_SERVICE_URL = 'https://oh-auth.vercel.app/secret/encrypt';
 const ENCRYPT_COVER_URL = 'https://picsum.photos/640/360';
+const RUN_CODE_BACKGROUND_FETCH_HELPER_NAME = 'nenyaFetch';
+const RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR =
+  'Nenya background fetch is unavailable. Reload the extension and confirm "Allow User Scripts" is enabled.';
+const ALLOWED_BACKGROUND_FETCH_INIT_KEYS = new Set([
+  'body',
+  'cache',
+  'credentials',
+  'headers',
+  'integrity',
+  'keepalive',
+  'method',
+  'redirect',
+  'referrer',
+  'referrerPolicy',
+]);
+const ALLOWED_BACKGROUND_FETCH_CREDENTIALS = new Set([
+  'include',
+  'omit',
+  'same-origin',
+]);
+const ALLOWED_BACKGROUND_FETCH_CACHE = new Set([
+  'default',
+  'force-cache',
+  'no-cache',
+  'no-store',
+  'only-if-cached',
+  'reload',
+]);
+const ALLOWED_BACKGROUND_FETCH_REDIRECT = new Set([
+  'error',
+  'follow',
+  'manual',
+]);
+const ALLOWED_BACKGROUND_FETCH_REFERRER_POLICY = new Set([
+  '',
+  'no-referrer',
+  'no-referrer-when-downgrade',
+  'origin',
+  'origin-when-cross-origin',
+  'same-origin',
+  'strict-origin',
+  'strict-origin-when-cross-origin',
+  'unsafe-url',
+]);
 
 /**
  * @typedef {'page-content' | 'html-source'} TabContentMode
  */
+
+/**
+ * @typedef {{
+ *   url: string,
+ *   init?: {
+ *     method?: string,
+ *     headers?: Array<[string, string]>,
+ *     body?: { kind: 'text' | 'bytes', value: string | number[] } | null,
+ *     credentials?: RequestCredentials,
+ *     cache?: RequestCache,
+ *     redirect?: RequestRedirect,
+ *     referrer?: string,
+ *     referrerPolicy?: ReferrerPolicy | '',
+ *     integrity?: string,
+ *     keepalive?: boolean,
+ *   },
+ * }} RunCodeBackgroundFetchMessage
+ */
+
+/**
+ * Create helper code that is prepended to manual Run Code snippets.
+ * @param {boolean} backgroundFetchAvailable
+ * @returns {string}
+ */
+function buildRunCodeHelperPrelude(backgroundFetchAvailable) {
+  return [
+    `const __nenyaBackgroundFetchMessageType = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_MESSAGE,
+    )};`,
+    `const __nenyaBackgroundFetchHelperName = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_HELPER_NAME,
+    )};`,
+    `const __nenyaBackgroundFetchSetupError = ${JSON.stringify(
+      RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR,
+    )};`,
+    `const __nenyaBackgroundFetchEnabled = ${
+      backgroundFetchAvailable ? 'true' : 'false'
+    };`,
+    'async function __nenyaSerializeFetchBody(body) {',
+    '  if (body == null) {',
+    '    return null;',
+    '  }',
+    '  if (typeof body === \'string\') {',
+    '    return { kind: \'text\', value: body };',
+    '  }',
+    '  if (body instanceof URLSearchParams) {',
+    '    return { kind: \'text\', value: body.toString() };',
+    '  }',
+    '  if (body instanceof ArrayBuffer) {',
+    '    return { kind: \'bytes\', value: Array.from(new Uint8Array(body)) };',
+    '  }',
+    '  if (ArrayBuffer.isView(body)) {',
+    '    return {',
+    '      kind: \'bytes\',',
+    '      value: Array.from(',
+    '        new Uint8Array(body.buffer, body.byteOffset, body.byteLength),',
+    '      ),',
+    '    };',
+    '  }',
+    '  if (typeof Blob !== \'undefined\' && body instanceof Blob) {',
+    '    const bytes = new Uint8Array(await body.arrayBuffer());',
+    '    return { kind: \'bytes\', value: Array.from(bytes) };',
+    '  }',
+    '  throw new Error(',
+    '    \'Nenya background fetch only supports body values that are strings, URLSearchParams, Blob, ArrayBuffer, or typed arrays.\',',
+    '  );',
+    '}',
+    'function __nenyaSerializeFetchHeaders(headers) {',
+    '  if (headers == null) {',
+    '    return undefined;',
+    '  }',
+    '  if (typeof Headers !== \'undefined\' && headers instanceof Headers) {',
+    '    return Array.from(headers.entries()).map(([key, value]) => [',
+    '      String(key),',
+    '      String(value),',
+    '    ]);',
+    '  }',
+    '  if (Array.isArray(headers)) {',
+    '    return headers.map((entry) => {',
+    '      if (!Array.isArray(entry) || entry.length !== 2) {',
+    '        throw new Error(',
+    '          \'Nenya background fetch headers must be [name, value] pairs.\',',
+    '        );',
+    '      }',
+    '      return [String(entry[0]), String(entry[1])];',
+    '    });',
+    '  }',
+    '  if (headers && typeof headers === \'object\') {',
+    '    return Object.entries(headers).map(([key, value]) => [',
+    '      String(key),',
+    '      String(value),',
+    '    ]);',
+    '  }',
+    '  throw new Error(',
+    '    \'Nenya background fetch headers must be a Headers instance, an array of pairs, or an object.\',',
+    '  );',
+    '}',
+    'async function __nenyaNormalizeFetchInit(init) {',
+    '  if (init == null) {',
+    '    return {};',
+    '  }',
+    '  if (typeof init !== \'object\' || Array.isArray(init)) {',
+    '    throw new Error(',
+    '      \'Nenya background fetch init must be an object when provided.\',',
+    '    );',
+    '  }',
+    '  const next = {};',
+    '  if (init.method != null) {',
+    '    next.method = String(init.method);',
+    '  }',
+    '  if (init.headers !== undefined) {',
+    '    next.headers = __nenyaSerializeFetchHeaders(init.headers);',
+    '  }',
+    '  if (Object.prototype.hasOwnProperty.call(init, \'body\')) {',
+    '    next.body = await __nenyaSerializeFetchBody(init.body);',
+    '  }',
+    '  if (init.credentials != null) {',
+    '    next.credentials = String(init.credentials);',
+    '  }',
+    '  if (init.cache != null) {',
+    '    next.cache = String(init.cache);',
+    '  }',
+    '  if (init.redirect != null) {',
+    '    next.redirect = String(init.redirect);',
+    '  }',
+    '  if (init.referrer != null) {',
+    '    next.referrer = String(init.referrer);',
+    '  }',
+    '  if (init.referrerPolicy != null) {',
+    '    next.referrerPolicy = String(init.referrerPolicy);',
+    '  }',
+    '  if (init.integrity != null) {',
+    '    next.integrity = String(init.integrity);',
+    '  }',
+    '  if (init.keepalive != null) {',
+    '    next.keepalive = Boolean(init.keepalive);',
+    '  }',
+    '  return next;',
+    '}',
+    'function __nenyaBuildFetchResponse(payload) {',
+    '  const bodyText = typeof payload?.bodyText === \'string\' ? payload.bodyText : \'\';',
+    '  const headers = new Headers(',
+    '    payload?.headers && typeof payload.headers === \'object\'',
+    '      ? payload.headers',
+    '      : {},',
+    '  );',
+    '  return {',
+    '    ok: Boolean(payload?.ok),',
+    '    status: Number.isFinite(payload?.status) ? payload.status : 0,',
+    '    statusText:',
+    '      typeof payload?.statusText === \'string\' ? payload.statusText : \'\',',
+    '    url: typeof payload?.url === \'string\' ? payload.url : \'\',',
+    '    redirected: Boolean(payload?.redirected),',
+    '    headers,',
+    '    text() {',
+    '      return Promise.resolve(bodyText);',
+    '    },',
+    '    json() {',
+    '      return Promise.resolve().then(() => JSON.parse(bodyText));',
+    '    },',
+    '    clone() {',
+    '      return __nenyaBuildFetchResponse(payload);',
+    '    },',
+    '  };',
+    '}',
+    'globalThis[__nenyaBackgroundFetchHelperName] = async function nenyaFetch(',
+    '  input,',
+    '  init,',
+    ') {',
+    '  if (!__nenyaBackgroundFetchEnabled) {',
+    '    throw new Error(__nenyaBackgroundFetchSetupError);',
+    '  }',
+    '  const url =',
+    '    input instanceof URL',
+    '      ? input.toString()',
+    '      : typeof input === \'string\'',
+    '        ? input',
+    '        : input && typeof input.url === \'string\'',
+    '          ? input.url',
+    '          : \'\';',
+    '  if (!url) {',
+    '    throw new Error(',
+    '      \'Nenya background fetch requires an absolute URL string or URL object.\',',
+    '    );',
+    '  }',
+    '  if (!chrome?.runtime?.sendMessage) {',
+    '    throw new Error(__nenyaBackgroundFetchSetupError);',
+    '  }',
+    '  const response = await chrome.runtime.sendMessage({',
+    '    type: __nenyaBackgroundFetchMessageType,',
+    '    url,',
+    '    init: await __nenyaNormalizeFetchInit(init),',
+    '  });',
+    '  if (!response || response.ok !== true) {',
+    '    throw new Error(',
+    '      response && typeof response.error === \'string\'',
+    '        ? response.error',
+    '        : \'Nenya background fetch failed.\',',
+    '    );',
+    '  }',
+    '  return __nenyaBuildFetchResponse(response.response);',
+    '};',
+  ].join('\n');
+}
 
 /**
  * Build a user-authored JavaScript payload that catches runtime errors while
@@ -76,11 +325,18 @@ const ENCRYPT_COVER_URL = 'https://picsum.photos/640/360';
  * @param {string} code
  * @param {string} consoleLabel
  * @param {string} sourceName
+ * @param {boolean} backgroundFetchAvailable
  * @returns {string}
  */
-function buildUserScriptCode(code, consoleLabel, sourceName) {
+function buildUserScriptCode(
+  code,
+  consoleLabel,
+  sourceName,
+  backgroundFetchAvailable,
+) {
   return [
     '(async function() {',
+    buildRunCodeHelperPrelude(backgroundFetchAvailable),
     '  try {',
     code,
     '  } catch (error) {',
@@ -99,6 +355,26 @@ function buildUserScriptCode(code, consoleLabel, sourceName) {
  */
 function sanitizeSourceName(value) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '-');
+}
+
+/**
+ * Enable user-script messaging for manual Run Code when the Chrome runtime
+ * supports it. Snippets still run without the helper if this step is unavailable.
+ * @param {typeof chrome.userScripts} userScripts
+ * @returns {Promise<boolean>}
+ */
+async function configureManualUserScriptWorld(userScripts) {
+  if (!userScripts || typeof userScripts.configureWorld !== 'function') {
+    return false;
+  }
+
+  try {
+    await userScripts.configureWorld({ messaging: true });
+    return true;
+  } catch (error) {
+    console.warn('[runCode] Failed to enable user-script messaging:', error);
+    return false;
+  }
 }
 
 /**
@@ -123,13 +399,20 @@ async function executeManualUserCode(tabId, code, consoleLabel, sourceName) {
   }
 
   try {
+    const backgroundFetchAvailable =
+      await configureManualUserScriptWorld(userScripts);
     await userScripts.execute({
       target: { tabId },
       world: 'USER_SCRIPT',
       injectImmediately: true,
       js: [
         {
-          code: buildUserScriptCode(code, consoleLabel, sourceName),
+          code: buildUserScriptCode(
+            code,
+            consoleLabel,
+            sourceName,
+            backgroundFetchAvailable,
+          ),
         },
       ],
     });
@@ -1448,9 +1731,288 @@ async function handleMarkdownDownload() {
   });
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isObjectRecord(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} rawUrl
+ * @returns {string}
+ */
+function normalizeBackgroundFetchUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    throw new Error('Nenya background fetch requires a non-empty URL.');
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (error) {
+    throw new Error('Nenya background fetch requires an absolute URL.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(
+      'Nenya background fetch only supports http and https URLs.',
+    );
+  }
+
+  return parsed.toString();
+}
+
+/**
+ * @param {unknown} rawHeaders
+ * @returns {Array<[string, string]> | undefined}
+ */
+function normalizeBackgroundFetchHeaders(rawHeaders) {
+  if (rawHeaders == null) {
+    return undefined;
+  }
+
+  if (Array.isArray(rawHeaders)) {
+    return rawHeaders.map((entry) => {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        throw new Error(
+          'Nenya background fetch headers must be [name, value] pairs.',
+        );
+      }
+      return [String(entry[0]), String(entry[1])];
+    });
+  }
+
+  if (isObjectRecord(rawHeaders)) {
+    return Object.entries(rawHeaders).map(([key, value]) => {
+      return [String(key), String(value)];
+    });
+  }
+
+  throw new Error(
+    'Nenya background fetch headers must be an array of pairs or an object.',
+  );
+}
+
+/**
+ * @param {unknown} rawBody
+ * @returns {string | Uint8Array | undefined}
+ */
+function deserializeBackgroundFetchBody(rawBody) {
+  if (rawBody == null) {
+    return undefined;
+  }
+
+  if (!isObjectRecord(rawBody)) {
+    throw new Error('Nenya background fetch body has an invalid shape.');
+  }
+
+  const kind = rawBody.kind;
+  if (kind === 'text') {
+    if (typeof rawBody.value !== 'string') {
+      throw new Error('Nenya background fetch text bodies must be strings.');
+    }
+    return rawBody.value;
+  }
+
+  if (kind === 'bytes') {
+    if (!Array.isArray(rawBody.value)) {
+      throw new Error(
+        'Nenya background fetch byte bodies must be numeric arrays.',
+      );
+    }
+    const bytes = rawBody.value.map((value) => {
+      const next = Number(value);
+      if (!Number.isInteger(next) || next < 0 || next > 255) {
+        throw new Error(
+          'Nenya background fetch byte bodies must contain 0-255 integers.',
+        );
+      }
+      return next;
+    });
+    return Uint8Array.from(bytes);
+  }
+
+  throw new Error(`Unsupported Nenya background fetch body kind: ${kind}`);
+}
+
+/**
+ * @param {unknown} rawInit
+ * @returns {RequestInit}
+ */
+function buildBackgroundFetchInit(rawInit) {
+  if (rawInit == null) {
+    return {};
+  }
+
+  if (!isObjectRecord(rawInit)) {
+    throw new Error('Nenya background fetch init must be an object.');
+  }
+
+  const unsupportedKeys = Object.keys(rawInit).filter((key) => {
+    return !ALLOWED_BACKGROUND_FETCH_INIT_KEYS.has(key);
+  });
+  if (unsupportedKeys.length > 0) {
+    throw new Error(
+      `Unsupported Nenya background fetch init fields: ${unsupportedKeys.join(', ')}`,
+    );
+  }
+
+  /** @type {RequestInit} */
+  const init = {};
+
+  if (rawInit.method != null) {
+    const method = String(rawInit.method).trim();
+    if (!method) {
+      throw new Error('Nenya background fetch method must not be empty.');
+    }
+    init.method = method;
+  }
+
+  const headers = normalizeBackgroundFetchHeaders(rawInit.headers);
+  if (headers) {
+    init.headers = headers;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(rawInit, 'body')) {
+    init.body = deserializeBackgroundFetchBody(rawInit.body);
+  }
+
+  if (rawInit.credentials != null) {
+    const credentials = String(rawInit.credentials);
+    if (!ALLOWED_BACKGROUND_FETCH_CREDENTIALS.has(credentials)) {
+      throw new Error(
+        `Unsupported Nenya background fetch credentials value: ${credentials}`,
+      );
+    }
+    init.credentials = credentials;
+  }
+
+  if (rawInit.cache != null) {
+    const cache = String(rawInit.cache);
+    if (!ALLOWED_BACKGROUND_FETCH_CACHE.has(cache)) {
+      throw new Error(
+        `Unsupported Nenya background fetch cache value: ${cache}`,
+      );
+    }
+    init.cache = cache;
+  }
+
+  if (rawInit.redirect != null) {
+    const redirect = String(rawInit.redirect);
+    if (!ALLOWED_BACKGROUND_FETCH_REDIRECT.has(redirect)) {
+      throw new Error(
+        `Unsupported Nenya background fetch redirect value: ${redirect}`,
+      );
+    }
+    init.redirect = redirect;
+  }
+
+  if (rawInit.referrer != null) {
+    init.referrer = String(rawInit.referrer);
+  }
+
+  if (rawInit.referrerPolicy != null) {
+    const referrerPolicy = String(rawInit.referrerPolicy);
+    if (!ALLOWED_BACKGROUND_FETCH_REFERRER_POLICY.has(referrerPolicy)) {
+      throw new Error(
+        `Unsupported Nenya background fetch referrerPolicy value: ${referrerPolicy}`,
+      );
+    }
+    init.referrerPolicy = referrerPolicy;
+  }
+
+  if (rawInit.integrity != null) {
+    init.integrity = String(rawInit.integrity);
+  }
+
+  if (rawInit.keepalive != null) {
+    init.keepalive = Boolean(rawInit.keepalive);
+  }
+
+  return init;
+}
+
+/**
+ * @param {Headers} headers
+ * @returns {Record<string, string>}
+ */
+function serializeBackgroundFetchHeaders(headers) {
+  /** @type {Record<string, string>} */
+  const result = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+/**
+ * @param {RunCodeBackgroundFetchMessage} message
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   status: number,
+ *   statusText: string,
+ *   url: string,
+ *   redirected: boolean,
+ *   headers: Record<string, string>,
+ *   bodyText: string,
+ * }>}
+ */
+async function executeRunCodeBackgroundFetch(message) {
+  const url = normalizeBackgroundFetchUrl(message.url);
+  const init = buildBackgroundFetchInit(message.init);
+
+  let response;
+  try {
+    response = await fetch(url, init);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Nenya background fetch failed: ${detail}`);
+  }
+
+  const bodyText = await response.text();
+  return {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    url: response.url,
+    redirected: response.redirected,
+    headers: serializeBackgroundFetchHeaders(response.headers),
+    bodyText,
+  };
+}
+
 // ============================================================================
 // MESSAGE LISTENER
 // ============================================================================
+
+if (chrome.runtime.onUserScriptMessage) {
+  chrome.runtime.onUserScriptMessage.addListener(
+    (message, sender, sendResponse) => {
+      if (!message || message.type !== RUN_CODE_BACKGROUND_FETCH_MESSAGE) {
+        return false;
+      }
+
+      void (async () => {
+        try {
+          const response = await executeRunCodeBackgroundFetch(
+            /** @type {RunCodeBackgroundFetchMessage} */ (message),
+          );
+          sendResponse({ ok: true, response });
+        } catch (error) {
+          console.error('[background] Run code background fetch failed:', error);
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+
+      return true;
+    },
+  );
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') {
