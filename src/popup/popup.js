@@ -1220,7 +1220,9 @@ async function getFavoriteItemsCache() {
 }
 
 /**
- * Cache favorite items for fast popup startup.
+ * Cache favorite-item changes made in the popup.
+ * Background refreshes own their cache writes so they finish when the popup
+ * closes before a Raindrop request completes.
  * @param {any[]} items
  * @param {{fetchedAt?: number}} [options]
  * @returns {Promise<void>}
@@ -1323,7 +1325,8 @@ async function refreshFavoriteItems(options) {
     if (mutationTokenAtFetchStart !== favoriteItemsMutationToken) {
       return favoriteItems;
     }
-    return applyFavoriteItemsCache(items);
+    await renderFavoriteItems(items);
+    return normalizeFavoriteItems(items);
   } finally {
     setFavoritesLoading(false);
   }

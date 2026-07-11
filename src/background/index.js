@@ -59,6 +59,7 @@ const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
 const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
+const FAVORITE_ITEMS_CACHE_STORAGE_KEY = 'raindropFavoriteItemsCache';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
@@ -2144,10 +2145,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === GET_RAINDROP_FAVORITES_MESSAGE) {
     handleGetRaindropFavorites()
-      .then((result) => {
+      .then(async (result) => {
+        const items = Array.isArray(result?.items) ? result.items : [];
+        await chrome.storage.local.set({
+          [FAVORITE_ITEMS_CACHE_STORAGE_KEY]: {
+            items,
+            fetchedAt: Date.now(),
+          },
+        });
         sendResponse({
           ok: true,
-          items: Array.isArray(result?.items) ? result.items : [],
+          items,
         });
       })
       .catch((error) => {
