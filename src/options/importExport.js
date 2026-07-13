@@ -160,10 +160,10 @@ const MIN_RULE_INTERVAL_SECONDS = 5;
 const DEFAULT_PARENT_PATH = '/Bookmarks Bar';
 
 const importButton = /** @type {HTMLButtonElement | null} */ (
-  document.getElementById('optionsFloatingImportButton')
+  document.getElementById('optionsFloatingFileImportButton')
 );
 const exportButton = /** @type {HTMLButtonElement | null} */ (
-  document.getElementById('optionsFloatingExportButton')
+  document.getElementById('optionsFloatingFileExportButton')
 );
 const fileInput = /** @type {HTMLInputElement | null} */ (
   document.getElementById('optionsFloatingImportFileInput')

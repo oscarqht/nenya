@@ -9,6 +9,10 @@ import {
   handleGetRaindropFavorites,
   handleSetRaindropFavorite,
 } from './mirror.js';
+import {
+  handleRaindropOptionsBackup,
+  handleRaindropOptionsRestore,
+} from './raindropOptionsBackup.js';
 
 import {
   initializeAutoReloadFeature,
@@ -59,6 +63,8 @@ const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
 const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
+const RAINDROP_OPTIONS_BACKUP_MESSAGE = 'options:raindropBackup';
+const RAINDROP_OPTIONS_RESTORE_MESSAGE = 'options:raindropRestore';
 const FAVORITE_ITEMS_CACHE_STORAGE_KEY = 'raindropFavoriteItemsCache';
 const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
 const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
@@ -2164,6 +2170,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ok: false,
           items: [],
           error: error instanceof Error ? error.message : 'Failed to load favorites.',
+        });
+      });
+    return true;
+  }
+
+  if (
+    message.type === RAINDROP_OPTIONS_BACKUP_MESSAGE ||
+    message.type === RAINDROP_OPTIONS_RESTORE_MESSAGE
+  ) {
+    const operation =
+      message.type === RAINDROP_OPTIONS_BACKUP_MESSAGE
+        ? handleRaindropOptionsBackup(
+            typeof message.json === 'string' ? message.json : '',
+          )
+        : handleRaindropOptionsRestore();
+    operation
+      .then((result) => sendResponse(result))
+      .catch((error) => {
+        console.error('[background] Raindrop options backup failed:', error);
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
         });
       });
     return true;

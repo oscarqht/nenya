@@ -35,10 +35,10 @@ const disconnectButton = /** @type {HTMLButtonElement | null} */ (
   document.getElementById('googleDriveDisconnectButton')
 );
 const driveExportButton = /** @type {HTMLButtonElement | null} */ (
-  document.getElementById('optionsFloatingDriveExportButton')
+  document.getElementById('optionsFloatingGoogleExportButton')
 );
 const driveImportButton = /** @type {HTMLButtonElement | null} */ (
-  document.getElementById('optionsFloatingDriveImportButton')
+  document.getElementById('optionsFloatingGoogleImportButton')
 );
 
 /**
@@ -155,7 +155,7 @@ async function handleDriveExportClick() {
   const previousLabel = driveExportButton?.textContent;
   if (driveExportButton) {
     driveExportButton.disabled = true;
-    driveExportButton.textContent = '☁️ Saving…';
+    driveExportButton.textContent = '🅖…';
   }
 
   try {
@@ -180,7 +180,7 @@ async function handleDriveExportClick() {
   } finally {
     if (driveExportButton) {
       driveExportButton.disabled = false;
-      driveExportButton.textContent = previousLabel || '☁️ Save to Drive';
+      driveExportButton.textContent = previousLabel || '🅖';
     }
   }
 }
@@ -199,7 +199,7 @@ async function handleDriveImportClick() {
   const previousLabel = driveImportButton?.textContent;
   if (driveImportButton) {
     driveImportButton.disabled = true;
-    driveImportButton.textContent = '☁️ Restoring…';
+    driveImportButton.textContent = '🅖…';
   }
 
   try {
@@ -219,7 +219,7 @@ async function handleDriveImportClick() {
   } finally {
     if (driveImportButton) {
       driveImportButton.disabled = false;
-      driveImportButton.textContent = previousLabel || '☁️ Restore from Drive';
+      driveImportButton.textContent = previousLabel || '🅖';
     }
   }
 }
