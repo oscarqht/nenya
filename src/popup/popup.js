@@ -354,6 +354,8 @@ const favoritesLoading = /** @type {HTMLDivElement | null} */ (
 let favoriteItems = [];
 /** @type {Set<string>} */
 let favoriteItemIds = new Set();
+/** @type {boolean} */
+let isFavoritesLoading = false;
 /** @type {number} */
 let favoriteItemsRenderToken = 0;
 /** @type {number} */
@@ -1183,17 +1185,31 @@ function syncSearchResultFavoriteButtons() {
   });
 }
 
+/**
+ * Show favorites only when the search field is empty and there is content to show.
+ * @returns {void}
+ */
+function updateFavoritesSectionVisibility() {
+  if (!favoritesSection) {
+    return;
+  }
+
+  const isSearching = Boolean(bookmarksSearchInput?.value.trim());
+  favoritesSection.classList.toggle(
+    'hidden',
+    isSearching || (!isFavoritesLoading && favoriteItems.length === 0),
+  );
+}
+
 function setFavoritesLoading(isLoading) {
   if (!favoritesLoading || !favoritesSection) {
     return;
   }
 
+  isFavoritesLoading = isLoading;
   favoritesLoading.classList.toggle('hidden', !isLoading);
   favoritesLoading.setAttribute('aria-busy', isLoading ? 'true' : 'false');
-  favoritesSection.classList.toggle(
-    'hidden',
-    !isLoading && favoriteItems.length === 0,
-  );
+  updateFavoritesSectionVisibility();
 }
 
 /**
@@ -1425,7 +1441,7 @@ async function renderFavoriteItems(items) {
     return;
   }
 
-  favoritesSection.classList.toggle('hidden', normalizedItems.length === 0);
+  updateFavoritesSectionVisibility();
   favoritesContainer.innerHTML = '';
   normalizedItems.forEach((item, index) => {
     const colors = getStableColor(item.url);
@@ -2930,6 +2946,7 @@ async function initializeBookmarksSearch(
     const query = target.value;
     highlightedIndex = -1; // Reset highlight when query changes
 
+    updateFavoritesSectionVisibility();
     updateCustomSearchSuggestions(query);
 
     const isSlashCommandQuery = query.trim().startsWith('/');
