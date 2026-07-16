@@ -15,6 +15,7 @@ import { concludeStatus } from './shared.js';
 
 import { debounce } from '../shared/debounce.js';
 import { getMatchingCodeRules } from '../shared/contextMenus.js';
+import { getValidTokens } from '../shared/tokenRefresh.js';
 
 /**
  * Close the current UI surface only when running as popup.
@@ -783,10 +784,12 @@ async function handleImportCustomCode(file) {
 const RAINDROP_SEARCH_MESSAGE = 'mirror:search';
 const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
-const GET_RAINDROP_FAVORITES_MESSAGE = 'mirror:getFavorites';
 const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const FAVORITE_ITEMS_CACHE_STORAGE_KEY = 'raindropFavoriteItemsCache';
 const FAVORITE_ITEMS_CACHE_TTL_MS = 15 * 60 * 1000;
+const RAINDROP_API_BASE = 'https://api.raindrop.io/rest/v1';
+const RAINDROP_PROVIDER_ID = 'raindrop';
+const FAVORITES_FETCH_PAGE_SIZE = 50;
 
 const PINNED_COLOR_PALETTE = [
   { bg: '#fecaca', text: '#991b1b' }, // red-200 / red-900
@@ -1309,13 +1312,44 @@ async function mutateFavoriteItemsCache(mutator) {
 }
 
 async function fetchFavoriteItems() {
-  const response = await chrome.runtime.sendMessage({
-    type: GET_RAINDROP_FAVORITES_MESSAGE,
-  });
-  if (response?.ok === false) {
-    throw new Error(response.error || 'Failed to load favorites');
+  const { tokens, needsReauth, error } = await getValidTokens(
+    RAINDROP_PROVIDER_ID,
+  );
+  if (needsReauth || !tokens) {
+    throw new Error(error || 'Failed to load favorites');
   }
-  return Array.isArray(response?.items) ? response.items : [];
+
+  /** @type {any[]} */
+  const items = [];
+  let page = 0;
+
+  while (true) {
+    const response = await fetch(
+      `${RAINDROP_API_BASE}/raindrops/0?perpage=${FAVORITES_FETCH_PAGE_SIZE}&page=${page}&sort=-created&search=${encodeURIComponent('important:true')}`,
+      {
+        headers: {
+          Authorization: `Bearer ${tokens.accessToken}`,
+        },
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) {
+      throw new Error('Failed to load favorites');
+    }
+    const data = await response.json();
+    const pageItems = Array.isArray(data?.items) ? data.items : [];
+    items.push(
+      ...pageItems.filter((item) => item && item.important === true),
+    );
+
+    if (pageItems.length < FAVORITES_FETCH_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return items;
 }
 
 /**
@@ -2230,7 +2264,7 @@ async function initializeBookmarksSearch(
   // Initial render of favorite items. Fire-and-forget so the Raindrop fetch
   // does not block registration of the keyboard-shortcut listener below;
   // renderFavoriteItems updates the shared state the listener reads.
-  void refreshFavoriteItems().catch((error) => {
+  void refreshFavoriteItems({ forceFetch: true }).catch((error) => {
     console.warn('[popup] Failed to load favorites:', error);
   });
 

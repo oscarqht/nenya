@@ -47,12 +47,14 @@
           </div>
         </div>
         <section id="favoritesSection" class="hidden" aria-labelledby="favoritesHeading">
-          <h2 id="favoritesHeading" class="text-[10px] font-bold text-base-content/50 uppercase tracking-wider mt-2">
-            Favorites
-          </h2>
-          <div id="favoritesLoading" class="favorites-loading hidden" role="status" aria-live="polite">
-            <span class="favorites-loading-spinner" aria-hidden="true"></span>
-            <span>Loading favorites...</span>
+          <div class="flex items-center justify-between gap-2 mt-2">
+            <h2 id="favoritesHeading" class="text-xs font-bold text-base-content/50 uppercase tracking-wider">
+              Favorites
+            </h2>
+            <div id="favoritesLoading" class="favorites-loading hidden" role="status" aria-live="polite">
+              <span class="favorites-loading-spinner" aria-hidden="true"></span>
+              <span class="sr-only">Loading favorites...</span>
+            </div>
           </div>
           <div id="favoritesContainer" class="flex flex-wrap gap-2 mt-2 empty:mt-0"></div>
         </section>

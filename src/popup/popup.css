@@ -148,10 +148,10 @@ body.save-to-unsorted-dialog-open {
 .favorites-loading {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  min-height: 1.45rem;
-  margin-top: 0.35rem;
-  padding: 0.15rem 0.45rem;
+  width: 0.85rem;
+  height: 0.85rem;
   border-radius: 999px;
   background: color-mix(in oklch, var(--color-base-200) 72%, transparent);
   color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
@@ -164,8 +164,8 @@ body.save-to-unsorted-dialog-open {
 }
 
 .favorites-loading-spinner {
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border: 2px solid currentColor;
   border-top-color: transparent;
   border-radius: 999px;

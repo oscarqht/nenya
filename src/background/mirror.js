@@ -129,7 +129,6 @@ export {
   handleOpenAllItemsInCollection,
   fetchAllItemsInCollection,
   handleUpdateRaindropUrl,
-  handleGetRaindropFavorites,
   handleSetRaindropFavorite,
 };
 
@@ -323,40 +322,6 @@ async function handleUpdateRaindropUrl(id, url) {
   });
 
   return { success: true, url: finalUrl };
-}
-
-/**
- * Load all Raindrop favorite items.
- * @returns {Promise<{items: any[]}>}
- */
-async function handleGetRaindropFavorites() {
-  const tokens = await loadValidProviderTokens();
-  if (!tokens) {
-    return { items: [] };
-  }
-
-  /** @type {any[]} */
-  const items = [];
-  let page = 0;
-
-  while (true) {
-    const response = await raindropRequest(
-      `/raindrops/0?perpage=${FETCH_PAGE_SIZE}&page=${page}&sort=-created`,
-      tokens,
-    );
-    const pageItems = Array.isArray(response?.items) ? response.items : [];
-    items.push(
-      ...pageItems.filter((item) => item && item.important === true),
-    );
-
-    if (pageItems.length < FETCH_PAGE_SIZE) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return { items };
 }
 
 /**
