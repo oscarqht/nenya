@@ -346,6 +346,312 @@ export async function handleScreenshotCopy(tabId) {
   }
 }
 
+// ============================================================================
+// FULL PAGE SCREENSHOT
+// ============================================================================
+
+/** Minimum delay (ms) between successive chrome.tabs.captureVisibleTab calls. */
+const CAPTURE_MIN_INTERVAL_MS = 550;
+/** Max retries when Chrome's per-second capture rate limit is hit. */
+const CAPTURE_RATE_LIMIT_MAX_RETRIES = 3;
+/** Initial backoff (ms) when the capture rate limit is hit; doubles per retry. */
+const CAPTURE_RATE_LIMIT_INITIAL_BACKOFF_MS = 500;
+/** Chrome/Skia's approximate max canvas dimension (px) on a single side. */
+const MAX_CANVAS_DIMENSION_PX = 32000;
+/** Chrome/Skia's approximate max canvas area (px^2). */
+const MAX_CANVAS_AREA_PX = 250_000_000;
+/** Attribute used to mark elements temporarily hidden during capture. */
+const HIDDEN_MARKER_ATTR = 'data-nenya-fph-hidden';
+
+/**
+ * Read page/viewport metrics needed to plan a full-page capture.
+ * @param {number} tabId - The tab to inspect.
+ * @returns {Promise<{scrollWidth: number, scrollHeight: number, viewportWidth: number, viewportHeight: number, devicePixelRatio: number, origScrollX: number, origScrollY: number}>}
+ */
+async function getPageMetrics(tabId) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => ({
+      scrollWidth: Math.max(
+        document.documentElement.scrollWidth,
+        document.body ? document.body.scrollWidth : 0,
+      ),
+      scrollHeight: Math.max(
+        document.documentElement.scrollHeight,
+        document.body ? document.body.scrollHeight : 0,
+      ),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      origScrollX: window.scrollX,
+      origScrollY: window.scrollY,
+    }),
+  });
+
+  const metrics = results && results[0] && results[0].result;
+  if (!metrics) {
+    throw new Error('Could not read page metrics for this page.');
+  }
+  return metrics;
+}
+
+/**
+ * Scroll the page to the given position and wait for it to settle
+ * (repaint + a short delay for lazy-loaded content).
+ * @param {number} tabId - The tab to scroll.
+ * @param {number} x - Target scrollX.
+ * @param {number} y - Target scrollY.
+ * @returns {Promise<void>}
+ */
+async function scrollAndSettle(tabId, x, y) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (scrollX, scrollY) =>
+      new Promise((resolve) => {
+        window.scrollTo(scrollX, scrollY);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setTimeout(resolve, 100);
+          });
+        });
+      }),
+    args: [x, y],
+  });
+}
+
+/**
+ * Temporarily hide fixed/sticky positioned elements so they don't get
+ * duplicated down the stitched image as the page scrolls.
+ * @param {number} tabId - The tab to modify.
+ * @returns {Promise<void>}
+ */
+async function hideFixedElements(tabId, markerAttr) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (attr) => {
+      const all = document.querySelectorAll('body *');
+      for (const el of all) {
+        const position = getComputedStyle(el).position;
+        if (position === 'fixed' || position === 'sticky') {
+          el.setAttribute(attr, '1');
+          el.style.setProperty('visibility', 'hidden', 'important');
+        }
+      }
+    },
+    args: [markerAttr],
+  });
+}
+
+/**
+ * Restore elements previously hidden by hideFixedElements.
+ * @param {number} tabId - The tab to modify.
+ * @returns {Promise<void>}
+ */
+async function restoreFixedElements(tabId, markerAttr) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (attr) => {
+      const hidden = document.querySelectorAll(`[${attr}]`);
+      for (const el of hidden) {
+        el.style.removeProperty('visibility');
+        el.removeAttribute(attr);
+      }
+    },
+    args: [markerAttr],
+  });
+}
+
+/**
+ * Capture the visible tab, retrying with backoff if Chrome's per-second
+ * capture rate limit is hit.
+ * @param {number} windowId - The window to capture.
+ * @param {{lastCaptureAt: number}} rateState - Mutable timestamp of the last successful call.
+ * @returns {Promise<string>} - The data URL of the capture.
+ */
+async function captureViewportWithRateLimit(windowId, rateState) {
+  const sinceLast = Date.now() - rateState.lastCaptureAt;
+  if (sinceLast < CAPTURE_MIN_INTERVAL_MS) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, CAPTURE_MIN_INTERVAL_MS - sinceLast),
+    );
+  }
+
+  let backoff = CAPTURE_RATE_LIMIT_INITIAL_BACKOFF_MS;
+  for (let attempt = 0; attempt <= CAPTURE_RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+        format: 'png',
+      });
+      rateState.lastCaptureAt = Date.now();
+      return dataUrl;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isRateLimit = message.includes(
+        'MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND',
+      );
+      if (!isRateLimit || attempt === CAPTURE_RATE_LIMIT_MAX_RETRIES) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoff));
+      backoff *= 2;
+    }
+  }
+
+  throw new Error('Failed to capture viewport after retries.');
+}
+
+/**
+ * Convert a Blob to a base64 data URL. Service workers have no FileReader,
+ * so this base64-encodes the ArrayBuffer manually in chunks.
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+async function blobToDataUrl(blob) {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  const base64 = btoa(binary);
+  return `data:${blob.type || 'image/png'};base64,${base64}`;
+}
+
+/**
+ * Compute the list of scrollY positions (CSS px) needed to tile the full
+ * page height, clamping the final tile to the bottom of the page.
+ * @param {number} scrollHeight
+ * @param {number} viewportHeight
+ * @param {number} devicePixelRatio
+ * @returns {number[]}
+ */
+function computeTilePositions(scrollHeight, viewportHeight, devicePixelRatio) {
+  if (scrollHeight <= viewportHeight) {
+    return [0];
+  }
+
+  const roundingMargin = Math.ceil(
+    devicePixelRatio >= 1 ? devicePixelRatio : 1 / devicePixelRatio,
+  );
+  const stepHeight = Math.max(1, viewportHeight - roundingMargin);
+
+  const positions = [];
+  let y = 0;
+  while (true) {
+    if (y + viewportHeight >= scrollHeight) {
+      positions.push(Math.max(0, scrollHeight - viewportHeight));
+      break;
+    }
+    positions.push(y);
+    y += stepHeight;
+  }
+  return positions;
+}
+
+/**
+ * Orchestrate a full-page capture: measure the page, tile-scroll through it
+ * capturing and stitching each viewport into one tall PNG, then restore the
+ * page's original scroll position and any temporarily hidden elements.
+ * @param {number} tabId - The tab to capture.
+ * @param {(current: number, total: number) => void} [onProgress] - Optional progress callback.
+ * @returns {Promise<string|null>} - The stitched PNG data URL, or null on failure.
+ */
+async function captureFullPageScreenshot(tabId, onProgress) {
+  const tab = await chrome.tabs.get(tabId);
+  const windowId = tab.windowId;
+
+  const metrics = await getPageMetrics(tabId);
+  const { scrollWidth, scrollHeight, viewportWidth, viewportHeight, devicePixelRatio, origScrollX, origScrollY } =
+    metrics;
+
+  const dpr = devicePixelRatio || 1;
+  const canvasWidth = Math.round(Math.min(scrollWidth, viewportWidth) * dpr);
+  const canvasHeight = Math.round(scrollHeight * dpr);
+
+  if (
+    canvasWidth > MAX_CANVAS_DIMENSION_PX ||
+    canvasHeight > MAX_CANVAS_DIMENSION_PX ||
+    canvasWidth * canvasHeight > MAX_CANVAS_AREA_PX
+  ) {
+    throw new Error('Page is too long to capture as one image.');
+  }
+
+  const positions = computeTilePositions(scrollHeight, viewportHeight, dpr);
+  const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
+  const ctx = canvas.getContext('2d');
+  const rateState = { lastCaptureAt: 0 };
+  let fixedElementsHidden = false;
+
+  try {
+    for (let i = 0; i < positions.length; i++) {
+      const y = positions[i];
+      await scrollAndSettle(tabId, origScrollX, y);
+
+      const dataUrl = await captureViewportWithRateLimit(windowId, rateState);
+      const blob = await (await fetch(dataUrl)).blob();
+      const bitmap = await createImageBitmap(blob);
+      ctx.drawImage(bitmap, 0, Math.round(y * dpr));
+      bitmap.close();
+
+      if (i === 0 && positions.length > 1 && !fixedElementsHidden) {
+        await hideFixedElements(tabId, HIDDEN_MARKER_ATTR);
+        fixedElementsHidden = true;
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress(i + 1, positions.length);
+      }
+    }
+  } finally {
+    try {
+      if (fixedElementsHidden) {
+        await restoreFixedElements(tabId, HIDDEN_MARKER_ATTR);
+      }
+    } catch (error) {
+      console.warn('[clipboard] Failed to restore hidden elements:', error);
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (x, y) => window.scrollTo(x, y),
+        args: [origScrollX, origScrollY],
+      });
+    } catch (error) {
+      console.warn('[clipboard] Failed to restore scroll position:', error);
+    }
+  }
+
+  const finalBlob = await canvas.convertToBlob({ type: 'image/png' });
+  return await blobToDataUrl(finalBlob);
+}
+
+/**
+ * Handle full-page screenshot capture for a single tab: scroll through the
+ * whole page, stitch the tiles into one image, and hand it off to the
+ * screenshot editor exactly like handleScreenshotCopy.
+ * @param {number} tabId - The ID of the tab to capture.
+ * @param {(current: number, total: number) => void} [onProgress] - Optional progress callback.
+ * @returns {Promise<boolean>} - True if successful, false otherwise.
+ */
+export async function handleFullPageScreenshotCopy(tabId, onProgress) {
+  try {
+    const dataUrl = await captureFullPageScreenshot(tabId, onProgress);
+    if (!dataUrl) {
+      return false;
+    }
+
+    await chrome.storage.local.set({ editorScreenshot: dataUrl });
+    await chrome.tabs.create({ url: 'src/editor/editor.html' });
+
+    return true;
+  } catch (error) {
+    console.warn('[clipboard] Failed to capture full page screenshot:', error);
+    return false;
+  }
+}
+
 /**
  * @deprecated Context menus are now created centrally in shared/contextMenus.js
  * This function is kept for backwards compatibility but does nothing.
@@ -454,6 +760,14 @@ export async function handleClipboardCommand(command) {
       // Screenshot only works with single tab
       if (tabs.length === 1 && typeof tabs[0].id === 'number') {
         success = await handleScreenshotCopy(tabs[0].id);
+      } else {
+        setCopyFailureBadge();
+        return;
+      }
+    } else if (command === 'copy-full-page-screenshot') {
+      // Full page screenshot only works with single tab
+      if (tabs.length === 1 && typeof tabs[0].id === 'number') {
+        success = await handleFullPageScreenshotCopy(tabs[0].id);
       } else {
         setCopyFailureBadge();
         return;

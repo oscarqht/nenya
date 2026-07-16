@@ -251,6 +251,12 @@ const SHORTCUT_CONFIG = {
     handler: () => void handleTakeScreenshot(),
     key: 'k',
   },
+  captureFullPage: {
+    emoji: '🖼️',
+    tooltip: 'Capture full page',
+    handler: () => void handleCaptureFullPage(),
+    key: 'f',
+  },
   screenRecording: {
     emoji: '⏺️',
     tooltip: 'Screen recording',
@@ -2149,6 +2155,77 @@ async function handleTakeScreenshot() {
         3000,
         statusMessage,
       );
+    }
+  }
+}
+
+/**
+ * Handle capturing a full-page screenshot of the current tab.
+ * @returns {Promise<void>}
+ */
+async function handleCaptureFullPage() {
+  /** @type {(message: any) => void} */
+  let progressListener;
+  try {
+    // Get the current active tab
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || tabs.length === 0) {
+      if (statusMessage) {
+        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
+      }
+      return;
+    }
+
+    const currentTab = tabs[0];
+
+    // Check if tab has a valid ID
+    if (typeof currentTab.id !== 'number') {
+      if (statusMessage) {
+        concludeStatus('Invalid tab ID.', 'error', 3000, statusMessage);
+      }
+      return;
+    }
+
+    if (statusMessage) {
+      statusMessage.textContent = 'Capturing full page…';
+    }
+
+    progressListener = (message) => {
+      if (
+        message &&
+        message.type === 'clipboard:fullPageProgress' &&
+        statusMessage
+      ) {
+        statusMessage.textContent = `Capturing full page… (${message.current}/${message.total})`;
+      }
+    };
+    chrome.runtime.onMessage.addListener(progressListener);
+
+    // Send message to background to capture full page screenshot
+    const response = await chrome.runtime.sendMessage({
+      type: 'clipboard:takeFullPageScreenshot',
+      tabId: currentTab.id,
+    });
+
+    if (response && response.success) {
+      // Close the popup as the editor will open in a new tab
+      closeCurrentSurface();
+    } else {
+      throw new Error(response?.error || 'Failed to capture full page screenshot');
+    }
+  } catch (error) {
+    console.error('[popup] Error capturing full page screenshot:', error);
+    if (statusMessage) {
+      concludeStatus(
+        'Unable to capture full page.',
+        'error',
+        3000,
+        statusMessage,
+      );
+    }
+  } finally {
+    if (progressListener) {
+      chrome.runtime.onMessage.removeListener(progressListener);
     }
   }
 }

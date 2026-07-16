@@ -26,6 +26,7 @@ import {
   handleClipboardCommand,
   handleMultiTabCopy,
   handleScreenshotCopy,
+  handleFullPageScreenshotCopy,
   setCopySuccessBadge,
   setCopyFailureBadge,
 } from './clipboard.js';
@@ -53,6 +54,8 @@ const SAVE_UNSORTED_MESSAGE = 'mirror:saveToUnsorted';
 const ENCRYPT_AND_SAVE_MESSAGE = 'mirror:encryptAndSave';
 const CLIPBOARD_SAVE_TO_UNSORTED_MESSAGE = 'clipboard:saveToUnsorted';
 const TAKE_SCREENSHOT_MESSAGE = 'clipboard:takeScreenshot';
+const TAKE_FULL_PAGE_SCREENSHOT_MESSAGE = 'clipboard:takeFullPageScreenshot';
+const FULL_PAGE_SCREENSHOT_PROGRESS_MESSAGE = 'clipboard:fullPageProgress';
 const RENAMED_TAB_TITLES_STORAGE_KEY = 'renamedTabTitles';
 const SHOW_SAVE_TO_UNSORTED_DIALOG_MESSAGE =
   'showSaveToUnsortedDialog';
@@ -624,7 +627,8 @@ chrome.commands.onCommand.addListener((command) => {
     command === 'copy-title-url' ||
     command === 'copy-title-dash-url' ||
     command === 'copy-markdown-link' ||
-    command === 'copy-screenshot'
+    command === 'copy-screenshot' ||
+    command === 'copy-full-page-screenshot'
   ) {
     void handleClipboardCommand(command).catch((error) => {
       console.warn('[commands] Clipboard command failed:', error);
@@ -2296,6 +2300,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === TAKE_FULL_PAGE_SCREENSHOT_MESSAGE) {
+    const tabId = typeof message.tabId === 'number' ? message.tabId : null;
+    void (async () => {
+      try {
+        let targetTabId = tabId;
+        if (targetTabId === null) {
+          const tabs = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          });
+          if (tabs && tabs[0] && typeof tabs[0].id === 'number') {
+            targetTabId = tabs[0].id;
+          }
+        }
+
+        if (targetTabId !== null) {
+          const success = await handleFullPageScreenshotCopy(
+            targetTabId,
+            (current, total) => {
+              chrome.runtime
+                .sendMessage({
+                  type: FULL_PAGE_SCREENSHOT_PROGRESS_MESSAGE,
+                  current,
+                  total,
+                })
+                .catch(() => {
+                  // Ignore: no listener (e.g. popup already closed).
+                });
+            },
+          );
+          sendResponse({ success });
+        } else {
+          sendResponse({ success: false, error: 'No active tab found' });
+        }
+      } catch (error) {
+        console.warn('[background] Failed to capture full page screenshot:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === COLLECT_PAGE_CONTENT_MESSAGE) {
     void (async () => {
       try {
@@ -2625,6 +2671,14 @@ if (chrome.contextMenus) {
     if (menuItemId === NENYA_MENU_IDS.TAKE_SCREENSHOT) {
       if (tab && typeof tab.id === 'number') {
         void handleScreenshotCopy(tab.id);
+      }
+      return;
+    }
+
+    // Capture full page
+    if (menuItemId === NENYA_MENU_IDS.CAPTURE_FULL_PAGE) {
+      if (tab && typeof tab.id === 'number') {
+        void handleFullPageScreenshotCopy(tab.id);
       }
       return;
     }

@@ -126,6 +126,9 @@
     "copy-screenshot": {
       "description": "📋 Copy Screenshot"
     },
+    "copy-full-page-screenshot": {
+      "description": "🖼️ Capture Full Page Screenshot"
+    },
     "tabs-activate-left-tab": {
       "description": "🗂️ Activate left tab"
     },

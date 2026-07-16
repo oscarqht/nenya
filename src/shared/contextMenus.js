@@ -55,6 +55,7 @@ export const NENYA_MENU_IDS = {
   // Tools
   EMOJI_PICKER: 'nenya-emoji-picker',
   TAKE_SCREENSHOT: 'nenya-take-screenshot',
+  CAPTURE_FULL_PAGE: 'nenya-capture-full-page',
   SCREEN_RECORDING: 'nenya-screen-recording',
   AUTO_RELOAD: 'nenya-auto-reload',
   DOWNLOAD_MARKDOWN: 'nenya-download-markdown',
@@ -274,6 +275,13 @@ async function createRootMenus() {
     id: NENYA_MENU_IDS.TAKE_SCREENSHOT,
     parentId: NENYA_MENU_IDS.TOOLS_PARENT,
     title: '📸 Take screenshot',
+    contexts: contexts,
+  });
+
+  await createMenuItem({
+    id: NENYA_MENU_IDS.CAPTURE_FULL_PAGE,
+    parentId: NENYA_MENU_IDS.TOOLS_PARENT,
+    title: '🖼️ Capture full page',
     contexts: contexts,
   });
 
