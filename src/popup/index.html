@@ -38,9 +38,11 @@
     <!-- bookmarks search -->
     <article class="w-full p-4 bg-base-100 nenya-soft-surface" aria-labelledby="bookmarks-search-heading">
       <div class="space-y-2">
-        <div class="relative">
+        <div class="relative w-full">
+          <input id="historyAutocomplete" type="text"
+            class="input w-full nenya-soft-input absolute inset-0 text-base-content/40 pointer-events-none !bg-transparent !border-transparent z-0" tabindex="-1" readonly />
           <input id="bookmarksSearchInput" type="search" placeholder="Search Raindrop and Notion..."
-            class="input input-bordered w-full nenya-soft-input" autofocus />
+            class="input input-bordered w-full nenya-soft-input relative z-10 !bg-transparent" autofocus />
           <div id="customSearchSuggestions"
             class="hidden absolute left-0 right-0 top-full mt-1 z-20 bg-base-100 border border-base-300 rounded-md shadow-md max-h-56 overflow-y-auto"
             role="listbox" aria-label="Custom search engines">

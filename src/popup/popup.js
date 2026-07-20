@@ -398,6 +398,9 @@ const runCodeList = /** @type {HTMLDivElement | null} */ (
   document.getElementById('runCodeList')
 );
 
+const historyAutocomplete = /** @type {HTMLInputElement | null} */ (
+  document.getElementById('historyAutocomplete')
+);
 const bookmarksSearchInput = /** @type {HTMLInputElement | null} */ (
   document.getElementById('bookmarksSearchInput')
 );
@@ -2337,6 +2340,8 @@ async function initializeBookmarksSearch(
   let filteredCustomSearchEngines = [];
   /** @type {number} */
   let highlightedCustomSearchIndex = -1;
+  /** @type {chrome.history.HistoryItem | null} */
+  let topHistoryMatch = null;
 
   // Initial render of favorite items. Fire-and-forget so the Raindrop fetch
   // does not block registration of the keyboard-shortcut listener below;
@@ -3060,7 +3065,36 @@ async function initializeBookmarksSearch(
     updateFavoritesSectionVisibility();
     updateCustomSearchSuggestions(query);
 
+
     const isSlashCommandQuery = query.trim().startsWith('/');
+
+    if (query.trim() && !isSlashCommandQuery) {
+      chrome.history.search({ text: query, maxResults: 1 }, (results) => {
+        if (results && results.length > 0) {
+          topHistoryMatch = results[0];
+          if (historyAutocomplete) {
+            // Check if the URL without scheme matches the query to provide nice autocomplete
+            let cleanUrl = topHistoryMatch.url.replace(/^https?:\/\//, '');
+            if (cleanUrl.toLowerCase().startsWith(query.toLowerCase())) {
+              historyAutocomplete.value = query + cleanUrl.slice(query.length);
+            } else {
+              historyAutocomplete.value = cleanUrl; // fallback
+            }
+          }
+        } else {
+          topHistoryMatch = null;
+          if (historyAutocomplete) {
+            historyAutocomplete.value = '';
+          }
+        }
+      });
+    } else {
+      topHistoryMatch = null;
+      if (historyAutocomplete) {
+        historyAutocomplete.value = '';
+      }
+    }
+
 
     if (query.length >= 3 && !isSlashCommandQuery) {
       debouncedSearch(query);
@@ -3130,12 +3164,24 @@ async function initializeBookmarksSearch(
       return;
     }
 
+
     if (event.key === 'Enter') {
       event.preventDefault();
       const query = inputElement.value.trim();
 
+      // Check for Cmd+Enter to force Google Search
+      if (event.metaKey || event.ctrlKey) {
+        if (query) {
+          const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+          chrome.tabs.create({ url: searchUrl });
+          closeCurrentSurface();
+        }
+        return;
+      }
+
       // If there's a highlighted result, open it
       if (highlightedIndex >= 0 && highlightedIndex < currentResults.length) {
+
         const highlightedResult = currentResults[highlightedIndex];
 
         if (highlightedResult.type === 'raindrop') {
@@ -3153,7 +3199,16 @@ async function initializeBookmarksSearch(
         return;
       }
 
+
+      // Otherwise, check for top history match
+      if (topHistoryMatch && topHistoryMatch.url) {
+        chrome.tabs.create({ url: topHistoryMatch.url });
+        closeCurrentSurface();
+        return;
+      }
+
       // Otherwise, check for custom search engine shortcut
+
       if (query) {
         try {
           const engines = await getCustomSearchEngines();
