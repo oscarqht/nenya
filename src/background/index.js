@@ -1347,6 +1347,7 @@ function handleLifecycleEvent() {
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  void updateActionBehavior();
   handleLifecycleEvent();
 
   // Perform one-time migrations on install or update
@@ -1421,6 +1422,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  void updateActionBehavior();
   handleLifecycleEvent();
   void pruneClosedPersistedRenamedTabs();
 });
@@ -3035,5 +3037,46 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         console.warn('[contextMenu] Failed to update code submenus:', error);
       }
     })();
+  }
+});
+
+
+// ============================================================================
+// Action Button Behavior
+// ============================================================================
+const ACTION_BUTTON_STORAGE_KEY = 'action_button_behavior';
+
+async function updateActionBehavior() {
+  try {
+    const stored = await chrome.storage.local.get(ACTION_BUTTON_STORAGE_KEY);
+    const behavior = stored?.[ACTION_BUTTON_STORAGE_KEY] || 'popup';
+
+    // We can only configure side panel behavior if the API exists
+    if (chrome.sidePanel) {
+      if (behavior === 'sidepanel') {
+        // First disable the popup so side panel takes over
+        await chrome.action.setPopup({ popup: '' });
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+        // Define the default path if we haven't
+        await chrome.sidePanel.setOptions({
+          path: 'src/popup/index.html',
+          enabled: true
+        });
+      } else {
+        // Re-enable popup, which disables the side panel on action click implicitly
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+        await chrome.action.setPopup({ popup: 'src/popup/index.html' });
+      }
+    }
+  } catch (error) {
+    console.warn('[background] Failed to update action behavior:', error);
+  }
+}
+
+// Watch for changes to the action button behavior setting
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes[ACTION_BUTTON_STORAGE_KEY]) {
+    void updateActionBehavior();
   }
 });

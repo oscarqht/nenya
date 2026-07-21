@@ -538,6 +538,10 @@
         </a>
 
         <div class="nav-group-title">Interface</div>
+        <a href="#action-button-heading" class="nav-item nav-link" data-section="action-button-heading">
+          <span class="nav-icon text-lg">🖱️</span>
+          <span>Action Button</span>
+        </a>
         <a href="#pinned-shortcuts-heading" class="nav-item nav-link" data-section="pinned-shortcuts-heading">
           <span class="nav-icon text-lg">📌</span>
           <span>Pinned Shortcuts</span>
@@ -697,6 +701,31 @@
                 </button>
               </div>
               <div id="customSearchEnginesList"></div>
+            </div>
+          </div>
+        </section>
+
+                <!-- Action Button Section -->
+        <section class="section-content" data-section="action-button-heading" id="section-action-button">
+          <div class="animate-in">
+            <div class="section-header">
+              <h1 id="action-button-heading" class="section-title">Action Button</h1>
+              <p class="section-description">Choose how the extension responds when you click the action button in the toolbar.</p>
+            </div>
+
+            <div class="options-card max-w-2xl">
+              <div class="form-control w-full">
+                <label class="label">
+                  <span class="label-text font-medium text-base-content/80">Action Behavior</span>
+                </label>
+                <select id="action-behavior-select" class="select select-bordered w-full max-w-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
+                  <option value="popup">Open Popup</option>
+                  <option value="sidepanel">Open Side Panel</option>
+                </select>
+                <label class="label">
+                  <span class="label-text-alt text-base-content/60">Note: Choosing Side Panel will open the same page as the popup in a side panel.</span>
+                </label>
+              </div>
             </div>
           </div>
         </section>
