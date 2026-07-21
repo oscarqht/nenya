@@ -3267,17 +3267,24 @@ async function focusPopup() {
     await chrome.windows.update(currentWindow.id, { focused: true });
   } catch (error) {
     console.warn('[popup] Failed to focus window:', error);
+  } finally {
+    const attemptFocus = () => {
+      if (bookmarksSearchInput && document.body.dataset.surface !== 'home') {
+        window.focus();
+        bookmarksSearchInput.focus();
+      }
+    };
+    // Vivaldi may require a slightly longer delay to fully construct the popup DOM and window state
+    setTimeout(attemptFocus, 100);
+    setTimeout(attemptFocus, 300);
   }
 }
-void focusPopup();
 
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (bookmarksSearchInput && document.body.dataset.surface !== 'home') {
-      bookmarksSearchInput.focus();
-    }
-  }, 100);
-});
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', focusPopup);
+} else {
+  void focusPopup();
+}
 
 void loadAndRenderShortcuts();
 void refreshMatchingRunCodeSection();
