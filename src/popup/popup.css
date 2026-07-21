@@ -6,24 +6,11 @@
 }
 
 /* Popup width constraint - shared across all popup pages */
-/* Popup width constraint - shared across all popup pages */
 body {
-  width: 100%;
+  width: 100vw;
+  min-width: var(--popup-width);
   height: 100vh;
   min-height: 300px;
-}
-
-/* Restrict width only when explicitly rendered as a popup (via max-width media query matching typical popup width or using specific logic)
-   Actually, Chrome popups max out around 800x600. Sidepanels can be resized.
-   If we want it to always fill the width, we should just remove the fixed width constraint
-   and use 100%. The popup window itself restricts the width to whatever the content is,
-   or we can use body { min-width: 420px; } to ensure it doesn't shrink too small in side panel,
-   but lets it grow. Let's make it min-width: var(--popup-width); instead of fixed width/max-width.
-*/
-body {
-  min-width: var(--popup-width);
-  width: 100vw;
-  height: 100vh;
   display: flex;
   flex-direction: column;
 }
