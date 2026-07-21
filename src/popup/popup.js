@@ -3261,6 +3261,24 @@ if (!statusMessage) {
   console.error('[popup] Status element not found.');
 }
 
+async function focusPopup() {
+  try {
+    const currentWindow = await chrome.windows.getCurrent();
+    await chrome.windows.update(currentWindow.id, { focused: true });
+  } catch (error) {
+    console.warn('[popup] Failed to focus window:', error);
+  }
+}
+void focusPopup();
+
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (bookmarksSearchInput && document.body.dataset.surface !== 'home') {
+      bookmarksSearchInput.focus();
+    }
+  }, 100);
+});
+
 void loadAndRenderShortcuts();
 void refreshMatchingRunCodeSection();
 
