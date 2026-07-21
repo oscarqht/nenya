@@ -24,9 +24,6 @@
     "type": "module"
   },
   "options_page": "src/options/index.html",
-  "chrome_settings_overrides": {
-    "homepage": "https://app.raindrop.io/my/0/%E2%9D%A4%EF%B8%8F"
-  },
   "chrome_url_overrides": {
     "newtab": "src/newtab/index.html"
   },
