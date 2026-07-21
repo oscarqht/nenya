@@ -3283,3 +3283,30 @@ if (chrome?.storage?.onChanged) {
     }
   });
 }
+
+if (document.body.dataset.surface !== 'home') {
+  if (chrome?.tabs?.onActivated) {
+    chrome.tabs.onActivated.addListener(() => {
+      window.location.reload();
+    });
+  }
+
+  if (chrome?.tabs?.onUpdated) {
+    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+      if (changeInfo.url) {
+        const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (activeTabs.length > 0 && activeTabs[0].id === tabId) {
+          window.location.reload();
+        }
+      }
+    });
+  }
+
+  if (chrome?.windows?.onFocusChanged) {
+    chrome.windows.onFocusChanged.addListener((windowId) => {
+      if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        window.location.reload();
+      }
+    });
+  }
+}
