@@ -11,6 +11,10 @@ import {
 
 const ANNOTATION_STYLE_PREFERENCES_KEY = 'editorAnnotationStylePreferences';
 const CLOSE_AFTER_ACTION_KEY = 'editorCloseAfterAction';
+const EXPORT_IMAGE_FORMAT = 'jpeg';
+const EXPORT_IMAGE_MIME_TYPE = 'image/jpeg';
+const EXPORT_IMAGE_QUALITY = 0.85;
+const EXPORT_IMAGE_PIXEL_RATIO = 1;
 const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'line', 'note', 'text']);
 const SHARED_ANNOTATION_STYLE_IDS = new Set(['tldraw:color']);
 
@@ -827,7 +831,8 @@ async function exportAnnotatedScreenshot(format) {
     bounds: editorState.bounds,
     background: true,
     padding: 0,
-    pixelRatio: Math.max(1, Math.min(2, window.devicePixelRatio || 1)),
+    pixelRatio: EXPORT_IMAGE_PIXEL_RATIO,
+    ...(format === 'jpeg' ? { quality: EXPORT_IMAGE_QUALITY } : {}),
   });
 
   if (!result || !result.blob) {
@@ -841,7 +846,7 @@ async function exportAnnotatedScreenshot(format) {
  * @returns {string}
  */
 function createScreenshotFilename() {
-  return `screenshot-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+  return `screenshot-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jpg`;
 }
 
 /**
@@ -851,8 +856,8 @@ async function copyToClipboard() {
   const button = /** @type {HTMLButtonElement | null} */ (document.getElementById('action-copy'));
   try {
     setButtonBusy(button, true);
-    const blob = await exportAnnotatedScreenshot('png');
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    const blob = await exportAnnotatedScreenshot(EXPORT_IMAGE_FORMAT);
+    await navigator.clipboard.write([new ClipboardItem({ [EXPORT_IMAGE_MIME_TYPE]: blob })]);
     showActionSuccessIcon('action-copy');
 
     if (editorState.closeAfterAction) {
@@ -874,7 +879,7 @@ async function saveImage() {
   let objectUrl = '';
   try {
     setButtonBusy(button, true);
-    const blob = await exportAnnotatedScreenshot('png');
+    const blob = await exportAnnotatedScreenshot(EXPORT_IMAGE_FORMAT);
     objectUrl = URL.createObjectURL(blob);
 
     const link = document.createElement('a');
