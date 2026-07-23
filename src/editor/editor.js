@@ -12,9 +12,10 @@ import {
 const ANNOTATION_STYLE_PREFERENCES_KEY = 'editorAnnotationStylePreferences';
 const CLOSE_AFTER_ACTION_KEY = 'editorCloseAfterAction';
 const EXPORT_IMAGE_FORMAT = 'jpeg';
-const EXPORT_IMAGE_MIME_TYPE = 'image/jpeg';
 const EXPORT_IMAGE_QUALITY = 0.85;
 const EXPORT_IMAGE_PIXEL_RATIO = 1;
+const CLIPBOARD_IMAGE_FORMAT = 'png';
+const CLIPBOARD_IMAGE_MIME_TYPE = 'image/png';
 const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'line', 'note', 'text']);
 const SHARED_ANNOTATION_STYLE_IDS = new Set(['tldraw:color']);
 
@@ -856,8 +857,9 @@ async function copyToClipboard() {
   const button = /** @type {HTMLButtonElement | null} */ (document.getElementById('action-copy'));
   try {
     setButtonBusy(button, true);
-    const blob = await exportAnnotatedScreenshot(EXPORT_IMAGE_FORMAT);
-    await navigator.clipboard.write([new ClipboardItem({ [EXPORT_IMAGE_MIME_TYPE]: blob })]);
+    // ClipboardItem only supports image/png for image clipboard writes in Chrome.
+    const blob = await exportAnnotatedScreenshot(CLIPBOARD_IMAGE_FORMAT);
+    await navigator.clipboard.write([new ClipboardItem({ [CLIPBOARD_IMAGE_MIME_TYPE]: blob })]);
     showActionSuccessIcon('action-copy');
 
     if (editorState.closeAfterAction) {
