@@ -792,6 +792,7 @@ const OPEN_ALL_ITEMS_MESSAGE = 'mirror:openAllItems';
 const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const FAVORITE_ITEMS_CACHE_STORAGE_KEY = 'raindropFavoriteItemsCache';
+const FAVORITE_ITEMS_CACHE_TTL_MS = 15 * 60 * 1000;
 const RAINDROP_API_BASE = 'https://api.raindrop.io/rest/v1';
 const RAINDROP_PROVIDER_ID = 'raindrop';
 const FAVORITES_FETCH_PAGE_SIZE = 50;
@@ -1366,9 +1367,7 @@ async function refreshFavoriteItems() {
     await renderFavoriteItems(cache.items);
   }
 
-  if (!cache.hasCache || cache.items.length === 0) {
-    setFavoritesLoading(true);
-  }
+  setFavoritesLoading(true);
   const mutationTokenAtFetchStart = favoriteItemsMutationToken;
   try {
     const items = await fetchFavoriteItems();
@@ -2331,10 +2330,10 @@ async function initializeBookmarksSearch(
   /** @type {number} */
   let highlightedCustomSearchIndex = -1;
 
-  // Initial render of favorite items. Show cached items if any, then fire-and-forget
-  // a fetch to get latest favorites from Raindrop so it does not block rendering.
-  // applyFavoriteItemsCache updates the shared state the listener reads.
-  void refreshFavoriteItems().catch((error) => {
+  // Initial render of favorite items. Fire-and-forget so the Raindrop fetch
+  // does not block registration of the keyboard-shortcut listener below;
+  // renderFavoriteItems updates the shared state the listener reads.
+  void refreshFavoriteItems({ forceFetch: true }).catch((error) => {
     console.warn('[popup] Failed to load favorites:', error);
   });
 
@@ -2914,7 +2913,7 @@ async function initializeBookmarksSearch(
       } else if (a.type === 'raindrop-collection') {
         urlA = `https://app.raindrop.io/my/${a.data._id}`;
       }
-      
+
       if (b.type === 'raindrop') {
         urlB = b.data.link;
       } else if (b.type === 'raindrop-collection') {
