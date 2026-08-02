@@ -319,6 +319,9 @@ export async function showSaveToUnsortedDialog(tab) {
   const screenshotCheckbox = /** @type {HTMLInputElement | null} */ (document.getElementById(
     'saveToUnsortedScreenshotCheckbox',
   ));
+  const closeTabCheckbox = /** @type {HTMLInputElement | null} */ (document.getElementById(
+    'saveToUnsortedCloseTabCheckbox',
+  ));
   const cancelButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('saveToUnsortedCancelButton'));
   const confirmButton = /** @type {HTMLButtonElement | null} */ (document.getElementById('saveToUnsortedConfirmButton'));
   const popupBody = document.body;
@@ -328,6 +331,7 @@ export async function showSaveToUnsortedDialog(tab) {
     !titleInput ||
     !descriptionInput ||
     !screenshotCheckbox ||
+    !closeTabCheckbox ||
     !cancelButton ||
     !confirmButton
   ) {
@@ -376,7 +380,7 @@ export async function showSaveToUnsortedDialog(tab) {
         entries,
       });
       handleSaveResponse(response, /** @type {HTMLElement} */ (document.getElementById('statusMessage')));
-      if (response?.ok) {
+      if (response?.ok && closeTabCheckbox.checked) {
         await closeTabById(tab.id);
       }
     } catch (error) {
