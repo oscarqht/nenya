@@ -35,7 +35,6 @@ const AVAILABLE_SHORTCUTS = [
     key: 'j',
     shift: true,
   },
-  { id: 'autoReload', emoji: '🔁', tooltip: 'Auto reload this page', key: 'r' },
   {
     id: 'customCode',
     emoji: '📑',

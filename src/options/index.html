@@ -552,10 +552,6 @@
         </a>
 
         <div class="nav-group-title">Content Control</div>
-        <a href="#auto-reload-heading" class="nav-item nav-link" data-section="auto-reload-heading">
-          <span class="nav-icon text-lg">🔄</span>
-          <span>Auto Reload Rules</span>
-        </a>
         <a href="#custom-code-heading" class="nav-item nav-link" data-section="custom-code-heading">
           <span class="nav-icon text-lg">💻</span>
           <span>Custom JS CSS</span>
@@ -786,66 +782,6 @@
                   <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Available</h3>
                   <div id="pinnedShortcutsAvailableList" class="space-y-3" role="list"></div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Auto Reload Section -->
-        <section class="section-content" data-section="auto-reload-heading" id="section-autoreload">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="auto-reload-heading" class="section-title">Auto Reload Rules</h1>
-              <p class="section-description">Reload matching tabs on a schedule without writing scripts.</p>
-            </div>
-
-            <div class="options-card mb-6">
-              <form id="autoReloadRuleForm" novalidate>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                  <div class="md:col-span-2">
-                    <label class="form-label">URL Pattern</label>
-                    <input id="autoReloadPatternInput" class="nenya-input font-mono text-sm" type="text"
-                      autocomplete="off" placeholder="https://example.com/*" required>
-                  </div>
-                  <div>
-                    <label class="form-label">Interval (Minutes)</label>
-                    <input id="autoReloadIntervalInput" class="nenya-input" type="number" min="0.08" step="0.01"
-                      required placeholder="5">
-                  </div>
-                  <button id="autoReloadSaveButton" class="nenya-btn nenya-btn-vibrant" type="submit">Add Rule</button>
-                </div>
-                <button id="autoReloadCancelEditButton" class="nenya-btn nenya-btn-secondary mt-3" type="button"
-                  hidden>Cancel Edit</button>
-                <p id="autoReloadFormError" class="text-sm text-error mt-2" hidden></p>
-              </form>
-            </div>
-
-            <div class="options-card">
-              <h3 class="text-xs font-bold text-base-content/40 uppercase tracking-wider mb-4">Active Reloaders</h3>
-              <div id="autoReloadRulesEmpty" class="empty-state">No auto reload rules yet. Add one above to start.</div>
-              <div id="autoReloadRulesList" class="space-y-3" role="list"></div>
-
-              <div id="autoReloadRuleDetails" class="mt-6 pt-6 border-t border-base-300" hidden>
-                <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-lg font-semibold">Rule Details</h3>
-                  <span id="autoReloadRuleIntervalSummary" class="nenya-badge nenya-badge-green"></span>
-                </div>
-                <dl class="space-y-3 text-sm">
-                  <div>
-                    <dt class="form-label">Pattern</dt>
-                    <dd id="autoReloadRulePatternDetail" class="font-mono"></dd>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4">
-                    <div>
-                      <dt class="form-label">Created</dt>
-                      <dd id="autoReloadRuleCreatedDetail"></dd>
-                    </div>
-                    <div>
-                      <dt class="form-label">Last Updated</dt>
-                      <dd id="autoReloadRuleUpdatedDetail"></dd>
-                    </div>
-                  </div>
-                </dl>
               </div>
             </div>
           </div>

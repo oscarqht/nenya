@@ -233,12 +233,6 @@ const SHORTCUT_CONFIG = {
     key: 'j',
     shift: true,
   },
-  autoReload: {
-    emoji: '🔁',
-    tooltip: 'Auto reload this page',
-    handler: () => void handleAutoReload(),
-    key: 'r',
-  },
   customCode: {
     emoji: '📑',
     tooltip: 'Inject js/css into this page',
@@ -376,7 +370,6 @@ let saveUnsortedButton = null;
 let encryptSaveButton = null;
 let openOptionsButton = null;
 let importCustomCodeButton = null;
-let autoReloadButton = null;
 let customCodeButton = null;
 let takeScreenshotButton = null;
 
@@ -387,9 +380,6 @@ const importCustomCodeFileInput = /** @type {HTMLInputElement | null} */ (
 );
 const statusMessage = /** @type {HTMLDivElement | null} */ (
   document.getElementById('statusMessage')
-);
-const autoReloadStatusElement = /** @type {HTMLSpanElement | null} */ (
-  document.getElementById('autoReloadStatus')
 );
 const runCodeSection = /** @type {HTMLElement | null} */ (
   document.getElementById('runCodeSection')
@@ -458,7 +448,6 @@ async function loadAndRenderShortcuts() {
     encryptSaveButton = null;
     openOptionsButton = null;
     importCustomCodeButton = null;
-    autoReloadButton = null;
     customCodeButton = null;
 
     // Render buttons based on pinned shortcuts
@@ -512,9 +501,6 @@ async function loadAndRenderShortcuts() {
           break;
         case 'importCustomCode':
           importCustomCodeButton = button;
-          break;
-        case 'autoReload':
-          autoReloadButton = button;
           break;
         case 'customCode':
           customCodeButton = button;
@@ -1760,95 +1746,6 @@ void (async () => {
   void initializePopup();
 })();
 
-const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
-const AUTO_RELOAD_STATUS_REFRESH_INTERVAL = 1000;
-let autoReloadStatusTimer = null;
-
-/**
- * Format remaining milliseconds into a human-friendly countdown.
- * @param {number} remainingMs
- * @returns {string}
- */
-function formatRemainingCountdown(remainingMs) {
-  const safeMs = Math.max(0, Number(remainingMs) || 0);
-  if (safeMs === 0) {
-    return 'This tab will be reloaded in 0 seconds';
-  }
-  if (safeMs >= 60000) {
-    const minutes = Math.max(1, Math.ceil(safeMs / 60000));
-    return (
-      'This tab will be reloaded in ' +
-      minutes +
-      (minutes === 1 ? ' minute' : ' minutes')
-    );
-  }
-  const seconds = Math.max(1, Math.ceil(safeMs / 1000));
-  return (
-    'This tab will be reloaded in ' +
-    seconds +
-    (seconds === 1 ? ' second' : ' seconds')
-  );
-}
-
-/**
- * Update the auto reload status indicator from background state.
- * @returns {Promise<void>}
- */
-async function updateAutoReloadStatus() {
-  if (!autoReloadStatusElement) {
-    return;
-  }
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: GET_AUTO_RELOAD_STATUS_MESSAGE,
-    });
-    const status = response?.status;
-    if (
-      !status ||
-      typeof status.remainingMs !== 'number' ||
-      status.tabId === undefined
-    ) {
-      autoReloadStatusElement.hidden = true;
-      autoReloadStatusElement.textContent = '';
-      return;
-    }
-    autoReloadStatusElement.hidden = false;
-    autoReloadStatusElement.textContent = formatRemainingCountdown(
-      status.remainingMs,
-    );
-  } catch (error) {
-    autoReloadStatusElement.hidden = true;
-    autoReloadStatusElement.textContent = '';
-    console.warn('[popup] Failed to read auto reload status:', error);
-  }
-}
-
-/**
- * Start polling for auto reload countdown updates while popup is open.
- * @returns {void}
- */
-function startAutoReloadStatusUpdates() {
-  if (!autoReloadStatusElement) {
-    return;
-  }
-  void updateAutoReloadStatus();
-  if (autoReloadStatusTimer !== null) {
-    clearInterval(autoReloadStatusTimer);
-  }
-  autoReloadStatusTimer = setInterval(() => {
-    void updateAutoReloadStatus();
-  }, AUTO_RELOAD_STATUS_REFRESH_INTERVAL);
-}
-
-startAutoReloadStatusUpdates();
-
-window.addEventListener('unload', () => {
-  if (autoReloadStatusTimer !== null) {
-    clearInterval(autoReloadStatusTimer);
-    autoReloadStatusTimer = null;
-  }
-});
-
 /**
  * Handle getting page content as markdown.
  * @returns {Promise<void>}
@@ -1905,73 +1802,6 @@ async function handleGetMarkdown() {
     }
   }
 }
-
-/**
- * Handle opening auto reload options with current tab URL prefilled.
- * @returns {Promise<void>}
- */
-async function handleAutoReload() {
-  try {
-    // Get the current active tab
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs || tabs.length === 0) {
-      if (statusMessage) {
-        concludeStatus('No active tab found.', 'error', 3000, statusMessage);
-      }
-      return;
-    }
-
-    const currentTab = tabs[0];
-    const currentUrl = typeof currentTab.url === 'string' ? currentTab.url : '';
-
-    if (!currentUrl) {
-      if (statusMessage) {
-        concludeStatus(
-          'No URL found for current tab.',
-          'error',
-          3000,
-          statusMessage,
-        );
-      }
-      return;
-    }
-
-    // Store the URL to prefill in options page
-    await chrome.storage.local.set({
-      autoReloadPrefillUrl: currentUrl,
-    });
-
-    // Open options page with auto reload section hash
-    chrome.runtime.openOptionsPage(() => {
-      const error = chrome.runtime.lastError;
-      if (error) {
-        console.error('[popup] Unable to open options page.', error);
-        if (statusMessage) {
-          concludeStatus(
-            'Unable to open options page.',
-            'error',
-            3000,
-            statusMessage,
-          );
-        }
-      } else {
-        // Close the popup
-        closeCurrentSurface();
-      }
-    });
-  } catch (error) {
-    console.error('[popup] Error opening auto reload options:', error);
-    if (statusMessage) {
-      concludeStatus(
-        'Unable to open auto reload options.',
-        'error',
-        3000,
-        statusMessage,
-      );
-    }
-  }
-}
-
 
 /**
  * Handle opening custom JS/CSS options with current tab URL prefilled.
