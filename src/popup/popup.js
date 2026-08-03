@@ -398,7 +398,7 @@ const runCodeList = /** @type {HTMLDivElement | null} */ (
   document.getElementById('runCodeList')
 );
 
-const bookmarksSearchInput = /** @type {HTMLInputElement | null} */ (
+const bookmarksSearchInput = /** @type {HTMLTextAreaElement | null} */ (
   document.getElementById('bookmarksSearchInput')
 );
 const bookmarksSearchResults = /** @type {HTMLDivElement | null} */ (
@@ -2289,7 +2289,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /**
  * Initializes the bookmark search functionality.
- * @param {HTMLInputElement} inputElement
+ * @param {HTMLTextAreaElement} inputElement
  * @param {HTMLDivElement} resultsElement
  * @param {HTMLDivElement} customSearchSuggestionsElement
  */
@@ -3043,9 +3043,27 @@ async function initializeBookmarksSearch(
   const debouncedSearch = debounce(performSearch, 300);
 
   inputElement.addEventListener('input', (event) => {
-    const target = /** @type {HTMLInputElement | null} */ (event.target);
+    const target = /** @type {HTMLTextAreaElement | null} */ (event.target);
     if (!target) {
       return;
+    }
+
+    // Auto-resize the textarea based on content (up to 10 rows visually).
+    // Using scrollHeight, but first setting height to auto to get the real content height
+    target.style.height = 'auto';
+    // Calculate the line height to estimate maximum height for 10 rows.
+    // 2.8rem (min-height) is approx 45px for 1 row. Let's use computed style to be precise.
+    const computedStyle = window.getComputedStyle(target);
+    const lineHeight = parseFloat(computedStyle.lineHeight) || 24; // fallback
+    const padding = parseFloat(computedStyle.paddingTop) + parseFloat(computedStyle.paddingBottom);
+
+    // The max height is 10 rows
+    const maxHeight = (lineHeight * 10) + padding;
+
+    if (target.scrollHeight > maxHeight) {
+      target.style.height = `${maxHeight}px`;
+    } else {
+      target.style.height = `${target.scrollHeight}px`;
     }
     const query = target.value;
     highlightedIndex = -1; // Reset highlight when query changes
@@ -3124,6 +3142,11 @@ async function initializeBookmarksSearch(
     }
 
     if (event.key === 'Enter') {
+      // If Shift key is pressed, let the textarea insert a new line naturally
+      if (event.shiftKey) {
+        return;
+      }
+
       event.preventDefault();
       const query = inputElement.value.trim();
 

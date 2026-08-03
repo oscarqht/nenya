@@ -108,9 +108,15 @@ body.save-to-unsorted-dialog-open {
 }
 
 #bookmarksSearchInput {
-  height: 2.8rem;
+  min-height: 2.8rem;
+  height: auto;
   outline: none;
   box-shadow: none;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
 }
 
 #bookmarksSearchInput:focus {
