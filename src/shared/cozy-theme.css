@@ -38,7 +38,7 @@ body {
 }
 
 .nenya-soft-input {
-  border-radius: 999px;
+  border-radius: 12px;
   border-color: var(--nenya-border-soft);
   background: color-mix(in oklch, var(--color-base-100) 80%, transparent);
   outline: none;
