@@ -2,14 +2,6 @@
 
 import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
 
-/**
- * @typedef {Object} AutoReloadRuleSettings
- * @property {string} id
- * @property {string} pattern
- * @property {number} intervalSeconds
- * @property {string} [createdAt]
- * @property {string} [updatedAt]
- */
 
 /**
  * @typedef {Object} NotificationBookmarkSettings
@@ -133,7 +125,6 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
 /**
  * @typedef {Object} ExportPayload
  * @property {string} provider
- * @property {AutoReloadRuleSettings[]} autoReloadRules
  * @property {CustomCodeRuleSettings[]} customCodeRules
  * @property {RunCodeInPageRuleSettings[]} runCodeInPageRules
  * @property {AutoGoogleLoginRuleSettings[]} autoGoogleLoginRules
@@ -149,7 +140,6 @@ import { loadRules as loadAutoGoogleLoginRules } from './autoGoogleLogin.js';
 
 const PROVIDER_ID = 'raindrop';
 const EXPORT_VERSION = 14;
-const AUTO_RELOAD_RULES_KEY = 'autoReloadRules';
 const CUSTOM_CODE_RULES_KEY = 'customCodeRules';
 const RUN_CODE_IN_PAGE_RULES_KEY = 'runCodeInPageRules';
 const AUTO_GOOGLE_LOGIN_RULES_KEY = 'autoGoogleLoginRules';
@@ -191,7 +181,6 @@ const AVAILABLE_PINNED_SHORTCUT_IDS = new Set([
   'encryptSave',
   'saveClipboardToUnsorted',
   'importCustomCode',
-  'autoReload',
   'customCode',
   'takeScreenshot',
   'screenRecording',
@@ -371,55 +360,6 @@ function normalizePreferences(value) {
 }
 
 /**
- * Normalize auto reload rules for import/export.
- * @param {unknown} value
- * @returns {Array<AutoReloadRuleSettings & { disabled?: boolean }>}
- */
-function normalizeAutoReloadRules(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.reduce((rules, entry) => {
-    if (!entry || typeof entry !== 'object') {
-      return rules;
-    }
-
-    const raw =
-      /** @type {{ id?: unknown, pattern?: unknown, intervalSeconds?: unknown, disabled?: unknown, createdAt?: unknown, updatedAt?: unknown }} */ (
-        entry
-      );
-    const pattern = typeof raw.pattern === 'string' ? raw.pattern.trim() : '';
-    if (!isValidUrlPattern(pattern)) {
-      return rules;
-    }
-
-    const intervalCandidate = Math.floor(Number(raw.intervalSeconds));
-    const intervalSeconds =
-      Number.isFinite(intervalCandidate) && intervalCandidate > 0
-        ? Math.max(MIN_RULE_INTERVAL_SECONDS, intervalCandidate)
-        : MIN_RULE_INTERVAL_SECONDS;
-    const id = typeof raw.id === 'string' && raw.id.trim()
-      ? raw.id.trim()
-      : generateRuleId();
-
-    const rule = {
-      id,
-      pattern,
-      intervalSeconds,
-      disabled: !!raw.disabled,
-    };
-    if (typeof raw.createdAt === 'string') {
-      rule.createdAt = raw.createdAt;
-    }
-    if (typeof raw.updatedAt === 'string') {
-      rule.updatedAt = raw.updatedAt;
-    }
-
-    rules.push(rule);
-    return rules;
-  }, /** @type {Array<AutoReloadRuleSettings & { disabled?: boolean }>} */ ([]));
-}
 
 /**
  * Normalize custom code rules for import/export.
@@ -682,11 +622,10 @@ function normalizeCustomSearchEngines(value) {
 
 /**
  * Read current settings used by options import/export.
- * @returns {Promise<{ autoReloadRules: AutoReloadRuleSettings[], customCodeRules: CustomCodeRuleSettings[], runCodeInPageRules: RunCodeInPageRuleSettings[], autoGoogleLoginRules: AutoGoogleLoginRuleSettings[], pinnedShortcuts: string[], pinnedSearchResults: any[], customSearchEngines: Array<{id: string, name: string, shortcut: string, searchUrl: string}> }>}
+ * @returns {Promise<{ customCodeRules: CustomCodeRuleSettings[], runCodeInPageRules: RunCodeInPageRuleSettings[], autoGoogleLoginRules: AutoGoogleLoginRuleSettings[], pinnedShortcuts: string[], pinnedSearchResults: any[], customSearchEngines: Array<{id: string, name: string, shortcut: string, searchUrl: string}> }>}
  */
 async function readCurrentOptions() {
   const [
-    reloadResp,
     customCodeResp,
     runCodeInPageResp,
     autoGoogleLoginRulesResp,
@@ -694,7 +633,6 @@ async function readCurrentOptions() {
     pinnedSearchResultsResp,
     customSearchEnginesResp,
   ] = await Promise.all([
-    chrome.storage.local.get(AUTO_RELOAD_RULES_KEY),
     chrome.storage.local.get(CUSTOM_CODE_RULES_KEY),
     chrome.storage.local.get(RUN_CODE_IN_PAGE_RULES_KEY),
     loadAutoGoogleLoginRules(),
@@ -704,9 +642,6 @@ async function readCurrentOptions() {
   ]);
 
   return {
-    autoReloadRules: normalizeAutoReloadRules(
-      reloadResp?.[AUTO_RELOAD_RULES_KEY],
-    ),
     customCodeRules: normalizeCustomCodeRules(
       customCodeResp?.[CUSTOM_CODE_RULES_KEY],
     ),
@@ -756,7 +691,6 @@ function downloadJson(data, filename) {
  */
 export async function buildExportPayload() {
   const {
-    autoReloadRules,
     customCodeRules,
     runCodeInPageRules,
     autoGoogleLoginRules,
@@ -769,7 +703,6 @@ export async function buildExportPayload() {
     version: EXPORT_VERSION,
     data: {
       provider: PROVIDER_ID,
-      autoReloadRules,
       customCodeRules,
       runCodeInPageRules,
       autoGoogleLoginRules,
@@ -801,9 +734,6 @@ export async function applyExportPayload(parsed) {
     throw new Error('Unsupported provider in file.');
   }
 
-  const autoReloadRules = /** @type {AutoReloadRuleSettings[]} */ (
-    data.autoReloadRules
-  );
   const customCodeRules = /** @type {CustomCodeRuleSettings[]} */ (
     data.customCodeRules || []
   );
@@ -823,7 +753,6 @@ export async function applyExportPayload(parsed) {
     );
 
   await applyImportedOptions(
-    autoReloadRules,
     customCodeRules,
     runCodeInPageRules,
     autoGoogleLoginRules,
@@ -859,7 +788,6 @@ async function handleExportClick() {
 
 /**
  * Apply imported settings to storage.
- * @param {AutoReloadRuleSettings[]} autoReloadRules
  * @param {CustomCodeRuleSettings[]} customCodeRules
  * @param {RunCodeInPageRuleSettings[]} runCodeInPageRules
  * @param {AutoGoogleLoginRuleSettings[]} autoGoogleLoginRules
@@ -869,7 +797,6 @@ async function handleExportClick() {
  * @returns {Promise<void>}
  */
 async function applyImportedOptions(
-  autoReloadRules,
   customCodeRules,
   runCodeInPageRules,
   autoGoogleLoginRules,
@@ -877,7 +804,6 @@ async function applyImportedOptions(
   pinnedSearchResults,
   customSearchEngines,
 ) {
-  const sanitizedRules = normalizeAutoReloadRules(autoReloadRules);
   const sanitizedCustomCodeRules = normalizeCustomCodeRules(
     customCodeRules || [],
   );
@@ -898,7 +824,6 @@ async function applyImportedOptions(
   );
 
   await chrome.storage.local.set({
-    [AUTO_RELOAD_RULES_KEY]: sanitizedRules,
     [AUTO_GOOGLE_LOGIN_RULES_KEY]: sanitizedAutoGoogleLoginRules,
     [PINNED_SHORTCUTS_KEY]: sanitizedPinnedShortcuts,
     [PINNED_SEARCH_RESULTS_KEY]: sanitizedPinnedSearchResults,

@@ -14,13 +14,6 @@ import {
 } from './raindropOptionsBackup.js';
 
 import {
-  initializeAutoReloadFeature,
-  handleAutoReloadAlarm,
-  getActiveAutoReloadStatus,
-  evaluateAllTabs,
-} from './auto-reload.js';
-
-import {
   setupClipboardContextMenus,
   handleClipboardContextMenuClick,
   handleClipboardCommand,
@@ -66,8 +59,6 @@ const UPDATE_RAINDROP_URL_MESSAGE = 'mirror:updateRaindropUrl';
 const SET_RAINDROP_FAVORITE_MESSAGE = 'mirror:setFavorite';
 const RAINDROP_OPTIONS_BACKUP_MESSAGE = 'options:raindropBackup';
 const RAINDROP_OPTIONS_RESTORE_MESSAGE = 'options:raindropRestore';
-const GET_AUTO_RELOAD_STATUS_MESSAGE = 'autoReload:getStatus';
-const AUTO_RELOAD_RE_EVALUATE_MESSAGE = 'autoReload:reEvaluate';
 const RUN_CODE_IN_PAGE_EXECUTE_MESSAGE = 'runCodeInPage:execute';
 const RUN_CODE_BACKGROUND_FETCH_MESSAGE = 'runCodeInPage:backgroundFetch';
 const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
@@ -1428,10 +1419,6 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 
-void initializeAutoReloadFeature().catch((error) => {
-  console.error('[auto-reload] Initialization failed:', error);
-});
-
 chrome.tabs.onHighlighted.addListener(async () => {
   try {
     const tabs = await chrome.tabs.query({
@@ -2071,27 +2058,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === GET_AUTO_RELOAD_STATUS_MESSAGE) {
-    const status = getActiveAutoReloadStatus();
-    sendResponse({ status });
-    return true;
-  }
-
-  if (message.type === AUTO_RELOAD_RE_EVALUATE_MESSAGE) {
-    void evaluateAllTabs()
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch((error) => {
-        console.warn(
-          '[background] Failed to re-evaluate auto reload rules:',
-          error,
-        );
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
-
   if (message.type === RUN_CODE_IN_PAGE_EXECUTE_MESSAGE) {
     const ruleId = typeof message.ruleId === 'string' ? message.ruleId : '';
     const tabId = typeof message.tabId === 'number' ? message.tabId : null;
@@ -2689,15 +2655,6 @@ if (chrome.contextMenus) {
     if (menuItemId === NENYA_MENU_IDS.SCREEN_RECORDING) {
       if (tab && typeof tab.id === 'number') {
         void handleScreenRecordingToggle(tab.id);
-      }
-      return;
-    }
-
-    // Auto Reload
-    if (menuItemId === NENYA_MENU_IDS.AUTO_RELOAD) {
-      if (tab && tab.url) {
-        await chrome.storage.local.set({ autoReloadPrefillUrl: tab.url });
-        chrome.runtime.openOptionsPage();
       }
       return;
     }

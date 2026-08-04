@@ -6,7 +6,6 @@ import './actionButton.js';
 import './newTabDestination.js';
 import './importExport.js';
 import './googleDriveBackup.js';
-import './autoReload.js';
 import './customCode.js';
 import './runCodeInPage.js';
 import './autoGoogleLogin.js';

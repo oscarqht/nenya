@@ -57,7 +57,6 @@ export const NENYA_MENU_IDS = {
   TAKE_SCREENSHOT: 'nenya-take-screenshot',
   CAPTURE_FULL_PAGE: 'nenya-capture-full-page',
   SCREEN_RECORDING: 'nenya-screen-recording',
-  AUTO_RELOAD: 'nenya-auto-reload',
   DOWNLOAD_MARKDOWN: 'nenya-download-markdown',
 
   // Developer
@@ -289,13 +288,6 @@ async function createRootMenus() {
     id: NENYA_MENU_IDS.SCREEN_RECORDING,
     parentId: NENYA_MENU_IDS.TOOLS_PARENT,
     title: '⏺️ Screen recording',
-    contexts: contexts,
-  });
-
-  await createMenuItem({
-    id: NENYA_MENU_IDS.AUTO_RELOAD,
-    parentId: NENYA_MENU_IDS.TOOLS_PARENT,
-    title: '🔁 Auto reload',
     contexts: contexts,
   });
 
