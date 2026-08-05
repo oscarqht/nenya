@@ -1,7 +1,7 @@
 /* Common popup styles */
 
 :root {
-  --popup-width: 420px;
+  --popup-width: 400px;
   --save-to-unsorted-popup-height: 560px;
 }
 
@@ -9,6 +9,7 @@
 body {
   width: 100vw;
   min-width: var(--popup-width);
+  max-width: var(--popup-width);
   height: 100vh;
   min-height: 300px;
   display: flex;
@@ -215,7 +216,7 @@ body.save-to-unsorted-dialog-open {
 
 
 /* Adjust for side panel if needed */
-@media (min-width: 421px) {
+@media (min-width: 401px) {
   body {
     width: 100%;
     max-width: 100%;
