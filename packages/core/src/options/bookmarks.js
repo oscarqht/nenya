@@ -457,6 +457,23 @@ function registerExternalMessageListener() {
 }
 
 /**
+ * Pick up tokens written directly to storage by the background script's
+ * OAuth bridge (used on browsers that can't deliver the external
+ * oauth_success message, e.g. Firefox).
+ */
+function registerStorageChangeListener() {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync' || !changes[STORAGE_KEY]) {
+      return;
+    }
+    tokenCache = /** @type {StoredTokenMap} */ (
+      changes[STORAGE_KEY].newValue ?? {}
+    );
+    renderProviderState();
+  });
+}
+
+/**
  * Initialize the options page.
  */
 async function init() {
@@ -471,6 +488,7 @@ async function init() {
   });
 
   registerExternalMessageListener();
+  registerStorageChangeListener();
 
   if (PROVIDERS.length > 0) {
     providerSelect.value = PROVIDERS[0].id;

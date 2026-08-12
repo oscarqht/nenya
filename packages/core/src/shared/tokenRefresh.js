@@ -78,7 +78,7 @@ export async function refreshAccessToken(providerId, refreshToken) {
  * @param {StoredProviderTokens} tokens - The tokens to save
  * @returns {Promise<void>}
  */
-async function saveProviderTokens(providerId, tokens) {
+export async function saveProviderTokens(providerId, tokens) {
   const result = await chrome.storage.sync.get(STORAGE_KEY_TOKENS);
   const tokensMap = result[STORAGE_KEY_TOKENS] || {};
   tokensMap[providerId] = tokens;

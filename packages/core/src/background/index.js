@@ -12,6 +12,7 @@ import {
   handleRaindropOptionsBackup,
   handleRaindropOptionsRestore,
 } from './raindropOptionsBackup.js';
+import { saveProviderTokens } from '../shared/tokenRefresh.js';
 
 import {
   setupClipboardContextMenus,
@@ -2018,6 +2019,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (handleTokenValidationMessage(message, sendResponse)) {
     return true;
+  }
+
+  if (message.type === 'oauth_bridge_success') {
+    const tokens = message.tokens || {};
+    void saveProviderTokens(message.provider, {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: Date.now() + Number(tokens.expires_in) * 1000,
+    });
+    return false;
   }
 
   // Handle screen recorder messages

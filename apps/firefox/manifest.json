@@ -101,6 +101,15 @@
         "src/contentScript/youtube-fixes.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://oh-auth.vercel.app/*"
+      ],
+      "js": [
+        "src/contentScript/oauth-bridge.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "commands": {
