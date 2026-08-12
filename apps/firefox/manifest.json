@@ -1,0 +1,153 @@
+{
+  "manifest_version": 3,
+  "name": "Nenya",
+  "version": "1.123.0",
+  "description": "",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nenya@nenya-extension.local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "icons": {
+    "16": "assets/icons/icon-16x16.png",
+    "32": "assets/icons/icon-32x32.png",
+    "48": "assets/icons/icon-48x48.png",
+    "128": "assets/icons/icon-128x128.png"
+  },
+  "action": {
+    "default_title": "Nenya",
+    "default_icon": {
+      "16": "assets/icons/icon-16x16.png",
+      "32": "assets/icons/icon-32x32.png",
+      "48": "assets/icons/icon-48x48.png"
+    },
+    "default_popup": "src/popup/index.html"
+  },
+  "background": {
+    "scripts": ["src/background/index.js"],
+    "type": "module"
+  },
+  "options_page": "src/options/index.html",
+  "chrome_url_overrides": {
+    "newtab": "src/newtab/index.html"
+  },
+  "permissions": [
+    "bookmarks",
+    "storage",
+    "tabs",
+    "tabGroups",
+    "contextMenus",
+    "alarms",
+    "scripting",
+    "activeTab",
+    "clipboardWrite",
+    "clipboardRead",
+    "downloads",
+    "tabCapture",
+    "identity"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*",
+      "https://oh-auth.vercel.app/*"
+    ]
+  },
+  "host_permissions": [
+    "https://api.raindrop.io/*",
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/libs/*",
+        "src/contentScript/emoji-picker.js",
+        "src/contentScript/emoji-picker-ui.html",
+        "src/contentScript/emoji-picker-ui.js",
+        "src/recording/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/contentScript/custom-js-css.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/contentScript/auto-google-login.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "src/contentScript/youtube-fixes.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "description": "Open popup"
+    },
+    "bookmarks-save-to-unsorted": {
+      "description": "💧 Save to Unsorted"
+    },
+    "bookmarks-save-to-unsorted-encrypted": {
+      "description": "💧 Encrypt & Save to Unsorted"
+    },
+    "bookmarks-save-clipboard-to-unsorted": {
+      "description": "💧 Save clipboard link to Unsorted"
+    },
+    "copy-title": {
+      "description": "📋 Copy Title"
+    },
+    "copy-title-url": {
+      "description": "📋 Copy Title\\nURL"
+    },
+    "copy-title-dash-url": {
+      "description": "📋 Copy Title - URL"
+    },
+    "copy-markdown-link": {
+      "description": "📋 Copy [Title](URL)"
+    },
+    "copy-screenshot": {
+      "description": "📋 Copy Screenshot"
+    },
+    "copy-full-page-screenshot": {
+      "description": "🖼️ Capture Full Page Screenshot"
+    },
+    "tabs-activate-left-tab": {
+      "description": "🗂️ Activate left tab"
+    },
+    "tabs-activate-right-tab": {
+      "description": "🗂️ Activate right tab"
+    },
+    "download-markdown": {
+      "description": "📥 Download as markdown"
+    },
+    "emoji-picker-show": {
+      "description": "😀 Show Emoji Picker"
+    },
+    "screen-recording-start": {
+      "description": "⏺️ Start screen recording"
+    }
+  }
+}

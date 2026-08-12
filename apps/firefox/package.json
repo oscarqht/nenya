@@ -1,0 +1,6 @@
+{
+  "name": "@nenya/firefox",
+  "version": "1.123.0",
+  "description": "Firefox build target for the Nenya extension.",
+  "private": true
+}

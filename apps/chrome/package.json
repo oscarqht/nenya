@@ -1,0 +1,6 @@
+{
+  "name": "@nenya/chrome",
+  "version": "1.123.0",
+  "description": "Chrome build target for the Nenya extension.",
+  "private": true
+}

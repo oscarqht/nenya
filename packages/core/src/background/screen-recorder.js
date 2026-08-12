@@ -93,6 +93,12 @@ async function createOffscreenDocument() {
     return;
   }
 
+  if (!chrome.offscreen) {
+    throw new Error(
+      'Screen recording requires the Offscreen API, which is only available in Chrome.'
+    );
+  }
+
   try {
     // Check if offscreen document already exists
     console.log('[screen-recorder] Checking for existing offscreen contexts...');
