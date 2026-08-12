@@ -9,8 +9,7 @@
 body {
   width: 100vw;
   min-width: var(--popup-width);
-  height: 100vh;
-  min-height: 300px;
+  min-height: 480px;
   display: flex;
   flex-direction: column;
 }
