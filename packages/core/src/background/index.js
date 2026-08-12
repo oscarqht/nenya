@@ -13,6 +13,7 @@ import {
   handleRaindropOptionsRestore,
 } from './raindropOptionsBackup.js';
 import { saveProviderTokens } from '../shared/tokenRefresh.js';
+import { isFirefox } from '../shared/browserInfo.js';
 
 import {
   setupClipboardContextMenus,
@@ -66,8 +67,9 @@ const COLLECT_PAGE_CONTENT_MESSAGE = 'collect-page-content-as-markdown';
 const ENCRYPT_SERVICE_URL = 'https://oh-auth.vercel.app/secret/encrypt';
 const ENCRYPT_COVER_URL = 'https://picsum.photos/640/360';
 const RUN_CODE_BACKGROUND_FETCH_HELPER_NAME = 'nenyaFetch';
-const RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR =
-  'Nenya background fetch is unavailable. Reload the extension and confirm "Allow User Scripts" is enabled.';
+const RUN_CODE_BACKGROUND_FETCH_SETUP_ERROR = isFirefox()
+  ? 'Nenya background fetch is unavailable. Reload the extension and confirm the "Run user scripts" permission is granted.'
+  : 'Nenya background fetch is unavailable. Reload the extension and confirm "Allow User Scripts" is enabled.';
 const ALLOWED_BACKGROUND_FETCH_INIT_KEYS = new Set([
   'body',
   'cache',
@@ -387,11 +389,14 @@ async function configureManualUserScriptWorld(userScripts) {
  */
 async function executeManualUserCode(tabId, code, consoleLabel, sourceName) {
   const userScripts = chrome.userScripts;
-  const setupMessage =
-    'Nenya Run Code requires Chrome user scripts to be enabled. ' +
-    `Open chrome://extensions/?id=${chrome.runtime.id}, enable ` +
-    '"Allow User Scripts" on Chrome 138+, or enable Developer Mode on older Chrome. ' +
-    'Immediate Run Code also requires Chrome 135 or newer.';
+  const setupMessage = isFirefox()
+    ? 'Nenya Run Code requires the "Run user scripts" permission and ' +
+      'Firefox 128 or newer. Click Run again to grant the permission, ' +
+      'or enable it from about:addons > Nenya > Permissions.'
+    : 'Nenya Run Code requires Chrome user scripts to be enabled. ' +
+      `Open chrome://extensions/?id=${chrome.runtime.id}, enable ` +
+      '"Allow User Scripts" on Chrome 138+, or enable Developer Mode on older Chrome. ' +
+      'Immediate Run Code also requires Chrome 135 or newer.';
 
   if (!userScripts || typeof userScripts.execute !== 'function') {
     throw new Error(setupMessage);

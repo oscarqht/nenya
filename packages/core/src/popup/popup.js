@@ -16,6 +16,7 @@ import { concludeStatus } from './shared.js';
 import { debounce } from '../shared/debounce.js';
 import { getMatchingCodeRules } from '../shared/contextMenus.js';
 import { getValidTokens } from '../shared/tokenRefresh.js';
+import { isFirefox } from '../shared/browserInfo.js';
 
 /**
  * Close the current UI surface only when running as popup.
@@ -850,6 +851,33 @@ async function getActivePopupTab() {
 }
 
 /**
+ * On Firefox, the "userScripts" permission is optional-only and must be
+ * requested from a user gesture (this click handler qualifies). Chrome
+ * already declares "userScripts" as a required permission, so this is a
+ * no-op there.
+ * @returns {Promise<boolean>}
+ */
+async function ensureRunCodePermission() {
+  if (!isFirefox() || !chrome?.permissions) {
+    return true;
+  }
+  try {
+    const granted = await chrome.permissions.contains({
+      permissions: ['userScripts'],
+    });
+    if (granted) {
+      return true;
+    }
+    return await chrome.permissions.request({
+      permissions: ['userScripts'],
+    });
+  } catch (error) {
+    console.warn('[popup] Failed to request userScripts permission:', error);
+    return false;
+  }
+}
+
+/**
  * Execute a stored Run Code rule in the active tab.
  * @param {{id: string, title?: string}} rule
  * @param {HTMLButtonElement} button
@@ -872,6 +900,13 @@ async function runCodeInPage(rule, button, tabId) {
   button.innerHTML = '<span class="run-code-spinner" aria-hidden="true"></span>';
 
   try {
+    const permissionGranted = await ensureRunCodePermission();
+    if (!permissionGranted) {
+      throw new Error(
+        'Nenya Run Code requires the "Run user scripts" permission. ' +
+          'Grant it from about:addons > Nenya > Permissions, then try again.',
+      );
+    }
     const response = await chrome.runtime.sendMessage({
       type: RUN_CODE_IN_PAGE_EXECUTE_MESSAGE,
       ruleId: rule.id,
