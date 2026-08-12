@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nenya",
-  "version": "1.123.0",
+  "version": "1.124.0",
   "description": "",
   "browser_specific_settings": {
     "gecko": {
@@ -25,7 +25,9 @@
     "default_popup": "src/popup/index.html"
   },
   "background": {
-    "scripts": ["src/background/index.js"],
+    "scripts": [
+      "src/background/index.js"
+    ],
     "type": "module"
   },
   "options_page": "src/options/index.html",
