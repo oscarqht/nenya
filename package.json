@@ -2,9 +2,16 @@
   "name": "nenya",
   "version": "1.123.0",
   "description": "",
+  "private": true,
   "type": "module",
-  "main": "index.js",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
+    "build:chrome": "node scripts/build.mjs chrome",
+    "build:firefox": "node scripts/build.mjs firefox",
+    "build": "npm run build:chrome && npm run build:firefox",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

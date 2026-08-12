@@ -10,6 +10,34 @@ Nenya is the ultimate browser extension for users who refuse to be tied down to 
 
 Read the Nenya privacy policy on Notion: [Nenya Privacy Policy](https://triiii.notion.site/Nenya-Privacy-Policy-2a37aa7407c1807e959cedfaa5d3a6bb)
 
+## Development & Installation
+
+This repo is an npm-workspaces monorepo with separate build targets for Chrome and Firefox, sharing one codebase in `packages/core`:
+
+```
+packages/core/   # shared source (src/, assets/)
+apps/chrome/     # Chrome MV3 manifest.json
+apps/firefox/    # Firefox MV3 manifest.json
+```
+
+**Chrome** — load unpacked, no build step required:
+1. Go to `chrome://extensions`, enable Developer mode.
+2. Click "Load unpacked" and select `apps/chrome`.
+
+**Firefox** — load as a temporary add-on, no build step required:
+1. Go to `about:debugging#/runtime/this-firefox`.
+2. Click "Load Temporary Add-on…" and select `apps/firefox/manifest.json`.
+
+> Note: a few Chrome-only APIs (Offscreen, Side Panel, User Scripts) have no Firefox equivalent, so screen recording, the side panel, and the "Run Code" user-script world are Chrome-only for now — everything else works on both.
+
+**Building a release zip** (used by CI, or if you want a packaged build instead of loading unpacked):
+
+```bash
+npm install
+npm run build:chrome   # -> dist/chrome
+npm run build:firefox  # -> dist/firefox
+```
+
 ## Features
 
 ### 🚀 Latest Updates (v1.46.0 - v1.49.0)

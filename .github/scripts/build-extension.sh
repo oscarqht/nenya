@@ -3,6 +3,8 @@ set -euo pipefail
 
 DIST_DIR="${1:-dist}"
 ARCHIVE_NAME="${2:-extension.zip}"
+BROWSER="${3:-chrome}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PACKAGE_DIR="${DIST_DIR}/package"
 
 if ! command -v zip >/dev/null 2>&1; then
@@ -10,12 +12,11 @@ if ! command -v zip >/dev/null 2>&1; then
   exit 1
 fi
 
-rm -rf "${PACKAGE_DIR}"
-mkdir -p "${PACKAGE_DIR}"
+node "${REPO_ROOT}/scripts/build.mjs" "${BROWSER}"
 
-cp manifest.json "${PACKAGE_DIR}/manifest.json"
-cp -R src "${PACKAGE_DIR}/src"
-cp -R assets "${PACKAGE_DIR}/assets"
+rm -rf "${PACKAGE_DIR}"
+mkdir -p "$(dirname "${PACKAGE_DIR}")"
+cp -R "${REPO_ROOT}/dist/${BROWSER}" "${PACKAGE_DIR}"
 
 (
   cd "${PACKAGE_DIR}"

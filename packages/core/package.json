@@ -1,0 +1,6 @@
+{
+  "name": "@nenya/core",
+  "version": "1.123.0",
+  "description": "Shared, browser-agnostic source for the Nenya extension.",
+  "private": true
+}

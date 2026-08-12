@@ -13,31 +13,36 @@ Nenya is a browser extension designed for users who utilize multiple browsers. I
 - Picture-in-picture mode and global keyboard shortcuts.
 
 ## Tech Stack
-Vanilla JavaScript Chrome extension (Manifest V3).
+Vanilla JavaScript browser extension (Manifest V3), targeting Chrome and Firefox from a single npm-workspaces monorepo.
 
 ## Project Conventions
 
 ### Code Style
 - Use vanilla JavaScript (no TypeScript).
-- No build steps; plain source files only.
+- No bundler or transpiler; plain source files only (the monorepo's `scripts/build.mjs` copy step is the sole exception — see Architecture Patterns).
 - Use JSDoc to type all JavaScript source code.
 - Use single quotes for all string literals.
 - Follow clear, readable code conventions (avoid unnecessary abstractions).
 - Wrap all content scripts in IIFEs (Immediately Invoking Function Expressions) to prevent global variable pollution and ensure proper encapsulation.
 
 ### Architecture Patterns
-The project follows a typical browser extension architecture, separating concerns into distinct directories within `src/`:
--   **`background/`**: Contains scripts that run in the background, handling persistent tasks, event listeners, and API communications, such as `auto-reload.js`, `clipboard.js`, `mirror.js`, `options-backup.js`, `projects.js`, and `tab-snapshots.js`.
--   **`contentScript/`**: Houses scripts injected into web pages to interact with their DOM and content, including `auto-google-login.js`, `block-elements.js`, `darkMode.js`, `epicker.js`, and `llmPageInjector.js`.
--   **`libs/`**: Stores third-party JavaScript and CSS libraries, such as `ace.js`, `daisyui@5.css`, `darkreader.js`, `dayjs.min.js`, `readability.min.js`, and `tailwindcss@4.js`. These are typically browser-ready, standalone versions.
--   **`options/`**: Manages the extension's settings and configuration UI, with files like `autoGoogleLogin.js`, `bookmarks.js`, `customCode.js`, `darkMode.js`, `index.html`, and `options.js`.
--   **`popup/`**: Contains the HTML and JavaScript for the extension's browser action popup, including `chat.html`, `index.html`, `popup.js`, and `projects.js`.
--   **`shared/`**: Provides common utilities, helper functions, and shared constants used across different parts of the extension, such as `bookmarkFolders.js`, `icons.js`, `llmProviders.js`, and `urlProcessor.js`.
+The project is an npm workspaces monorepo:
+-   **`packages/core/src/`**: All shared, browser-agnostic source, separated into the same directories as before — `background/`, `contentScript/`, `libs/`, `options/`, `popup/`, `shared/`, etc.
+-   **`apps/chrome/`**: `manifest.json` for the Chrome MV3 build, plus `src`/`assets` symlinks into `packages/core` for zero-build "Load unpacked" development.
+-   **`apps/firefox/`**: `manifest.json` for the Firefox MV3 build (differs from Chrome's mainly in `background` — `scripts` instead of `service_worker` — and drops Chrome-only permissions like `sidePanel`, `userScripts`, `desktopCapture`), plus the same symlink setup.
+-   **`scripts/build.mjs`**: a plain Node copy script (no bundler) that dereferences the dev symlinks into `dist/chrome` or `dist/firefox` for packaging/zipping. Run via `npm run build:chrome` / `npm run build:firefox`.
+-   Within `packages/core/src/background/`: `clipboard.js`, `mirror.js`, `raindropOptionsBackup.js`, `screen-recorder.js`, etc.
+-   Within `packages/core/src/contentScript/`: `auto-google-login.js`, `custom-js-css.js`, `emoji-picker.js`, `youtube-fixes.js`, etc.
+-   **`packages/core/src/libs/`**: Stores third-party JavaScript and CSS libraries, such as `ace.js`, `daisyui@5.css`, `dayjs.min.js`, `readability.min.js`, and `tailwindcss@4.js`. These are typically browser-ready, standalone versions.
+-   **`packages/core/src/options/`**: Manages the extension's settings and configuration UI.
+-   **`packages/core/src/popup/`**: Contains the HTML and JavaScript for the extension's browser action popup.
+-   **`packages/core/src/shared/`**: Provides common utilities, helper functions, and shared constants used across different parts of the extension.
+-   Chrome-only APIs (Offscreen, sidePanel, userScripts) are feature-detected in code (e.g. `if (chrome.offscreen)`) rather than branched on browser name, so the same source runs on both targets.
 ### Preferred Frameworks & Libraries
 #### What to do when a framework/library is needed?
-- When a JavaScript library is required, download the CDN (browser-ready) version and place it in `src/libs`.
-  - Example: For `lodash`, download the minified CDN file (e.g., `lodash.min.js`) and save it as `src/libs/lodash.min.js`.
-- Reference these local files in HTML or JavaScript as needed (e.g., via `<script src="./libs/lodash.min.js"></script>`).
+- When a JavaScript library is required, download the CDN (browser-ready) version and place it in `packages/core/src/libs`.
+  - Example: For `lodash`, download the minified CDN file (e.g., `lodash.min.js`) and save it as `packages/core/src/libs/lodash.min.js`.
+- Reference these local files in HTML or JavaScript as needed (e.g., via `<script src="../libs/lodash.min.js"></script>`).
 - Do not use npm packages or require a build step for library usage.
 - Always prefer the browser-ready, standalone version from a reputable CDN (such as jsDelivr or unpkg).
 
@@ -63,7 +68,7 @@ The core domain revolves around enhancing browser functionality and user product
 - **LLM Integration**: Sending page content to language models for summarization or analysis.
 
 ## Important Constraints
-- Strict adherence to **vanilla JavaScript**, **no build steps**, and **no TypeScript**.
+- Strict adherence to **vanilla JavaScript**, **no bundler/transpiler**, and **no TypeScript**. The only build tooling permitted is `scripts/build.mjs`, a plain file-copy step for packaging release zips.
 
 ## External Dependencies
 - Raindrop.io (for bookmark and collection management).
