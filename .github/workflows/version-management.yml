@@ -47,7 +47,7 @@ jobs:
         git fetch --tags
 
         # Read current version from manifest.json
-        current_version=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('./manifest.json','utf8')); process.stdout.write(m.version);")
+        current_version=$(node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('./apps/chrome/manifest.json','utf8')); process.stdout.write(m.version);")
         echo "Current version: $current_version"
 
         # Parse major.minor.patch and bump minor
@@ -76,9 +76,12 @@ jobs:
         # Keep manifest and package versions aligned.
         node -e "
           const fs = require('fs');
-          const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
-          manifest.version = '$new_version';
-          fs.writeFileSync('./manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+
+          for (const manifestPath of ['./apps/chrome/manifest.json', './apps/firefox/manifest.json']) {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            manifest.version = '$new_version';
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+          }
 
           const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
           pkg.version = '$new_version';
@@ -86,7 +89,7 @@ jobs:
         "
 
         # Commit the changes
-        git add manifest.json package.json
+        git add apps/chrome/manifest.json apps/firefox/manifest.json package.json
         git commit -m "chore(release): bump version to v$new_version [no-cli]"
         git push origin main
 
