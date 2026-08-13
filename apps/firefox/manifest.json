@@ -1,15 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Nenya",
-  "version": "1.125.0",
+  "version": "1.126.0",
   "description": "",
   "browser_specific_settings": {
     "gecko": {
       "id": "nenya@nenya-extension.local",
       "strict_min_version": "115.0",
       "data_collection_permissions": {
-        "required": ["none"],
-        "optional": ["bookmarksInfo", "browsingActivity", "authenticationInfo"]
+        "required": [
+          "none"
+        ],
+        "optional": [
+          "bookmarksInfo",
+          "browsingActivity",
+          "authenticationInfo"
+        ]
       }
     }
   },
