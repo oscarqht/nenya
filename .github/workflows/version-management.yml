@@ -28,7 +28,7 @@ jobs:
         RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
       run: |
         if [ -z "${RELEASE_PUSH_TOKEN}" ]; then
-          echo "::warning::RELEASE_PUSH_TOKEN is not set. Tag-push triggers may not run, but Chrome publish will still run via workflow_run after Version Management completes on main."
+          echo "::warning::RELEASE_PUSH_TOKEN is not set. Tag-push triggers may not run, but store publish will still run via workflow_run after Version Management completes on main."
         fi
     
     - name: Setup Node.js
