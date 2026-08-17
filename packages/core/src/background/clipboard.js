@@ -234,7 +234,7 @@ async function copyImageViaTab(tabId, dataUrl, originalTabId) {
 
     // Get the window ID and focus it
     const tab = await chrome.tabs.get(tabId);
-    if (tab.windowId) {
+    if (tab?.windowId && chrome.windows?.update) {
       await chrome.windows.update(tab.windowId, { focused: true });
     }
 

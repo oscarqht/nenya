@@ -671,8 +671,15 @@ export async function saveUrlsToUnsorted(entries, options = {}) {
           }
 
           try {
-            if (entry.includeScreenshot && entry.tabId && entry.windowId) {
-              await chrome.windows.update(entry.windowId, { focused: true });
+            if (
+              entry.includeScreenshot &&
+              entry.tabId &&
+              entry.windowId &&
+              typeof chrome.tabs?.captureVisibleTab === 'function'
+            ) {
+              if (chrome.windows?.update) {
+                await chrome.windows.update(entry.windowId, { focused: true });
+              }
               await chrome.tabs.update(entry.tabId, { active: true });
               const screenshotDataUrl = await chrome.tabs.captureVisibleTab(
                 entry.windowId,

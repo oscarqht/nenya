@@ -519,21 +519,25 @@ async function createTabNextToActive(tabCreateProperties) {
  * @param {string} command
  * @returns {void}
  */
-chrome.commands.onCommand.addListener((command) => {
-  if (
-    command === 'tabs-activate-left-tab' ||
-    command === 'tabs-activate-right-tab'
-  ) {
-    void (async () => {
-      try {
-        const window = await chrome.windows.getCurrent({ populate: true });
-        if (!window.tabs) {
-          return;
-        }
-        const activeTabIndex = window.tabs.findIndex((tab) => tab.active);
-        if (activeTabIndex === -1) {
-          return;
-        }
+if (chrome.commands?.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (
+      command === 'tabs-activate-left-tab' ||
+      command === 'tabs-activate-right-tab'
+    ) {
+      void (async () => {
+        try {
+          if (!chrome.windows?.getCurrent) {
+            return;
+          }
+          const window = await chrome.windows.getCurrent({ populate: true });
+          if (!window.tabs) {
+            return;
+          }
+          const activeTabIndex = window.tabs.findIndex((tab) => tab.active);
+          if (activeTabIndex === -1) {
+            return;
+          }
 
         let newIndex;
         if (command === 'tabs-activate-left-tab') {
@@ -659,6 +663,7 @@ chrome.commands.onCommand.addListener((command) => {
     })();
     return;
   }
+
   if (command === 'screen-recording-start') {
     void (async () => {
       try {
@@ -672,6 +677,7 @@ chrome.commands.onCommand.addListener((command) => {
     return;
   }
 });
+}
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -1369,8 +1375,12 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     // Inject content scripts into existing tabs instead of reloading them
     // This preserves user state (scroll position, form data, etc.)
     // ⚡ Bolt: Use Promise.all to inject scripts into all tabs concurrently for faster startup.
-    const windows = await chrome.windows.getAll({ populate: true });
-    const allTabs = windows.flatMap((window) => window.tabs || []);
+    const windows = chrome.windows
+      ? await chrome.windows.getAll({ populate: true })
+      : [];
+    const allTabs = chrome.windows
+      ? windows.flatMap((window) => window.tabs || [])
+      : (await chrome.tabs.query({}));
 
     const contentScripts = [
       [
@@ -1418,79 +1428,92 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  void updateActionBehavior();
-  handleLifecycleEvent();
-  void pruneClosedPersistedRenamedTabs();
-});
+if (chrome.runtime?.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    void updateActionBehavior();
+    handleLifecycleEvent();
+    void pruneClosedPersistedRenamedTabs();
+  });
+}
 
-
-chrome.tabs.onHighlighted.addListener(async () => {
-  try {
-    const tabs = await chrome.tabs.query({
-      currentWindow: true,
-      highlighted: true,
-    });
-    const hasMultipleTabs = tabs && tabs.length > 1;
-    await updateScreenshotMenuVisibility(hasMultipleTabs);
-  } catch (error) {
-    console.warn(
-      '[contextMenu] Failed to update screenshot visibility:',
-      error,
-    );
-  }
-});
+if (chrome.tabs?.onHighlighted) {
+  chrome.tabs.onHighlighted.addListener(async () => {
+    try {
+      const tabs = await chrome.tabs.query({
+        currentWindow: true,
+        highlighted: true,
+      });
+      const hasMultipleTabs = tabs && tabs.length > 1;
+      await updateScreenshotMenuVisibility(hasMultipleTabs);
+    } catch (error) {
+      console.warn(
+        '[contextMenu] Failed to update screenshot visibility:',
+        error,
+      );
+    }
+  });
+}
 
 // Handle action button click during recording
 // When recording, the popup is disabled, so this listener fires
-chrome.action.onClicked.addListener(async (tab) => {
-  // Check if we're recording
-  if (isRecording()) {
-    // Stop recording and open preview
-    const handled = await handleActionClickDuringRecording();
-    if (handled) {
-      return;
+if (chrome.action?.onClicked) {
+  chrome.action.onClicked.addListener(async (tab) => {
+    // Check if we're recording
+    if (isRecording()) {
+      // Stop recording and open preview
+      const handled = await handleActionClickDuringRecording();
+      if (handled) {
+        return;
+      }
     }
-  }
-  // If not recording, this shouldn't happen since popup is enabled
-  // But just in case, open the popup manually
-  try {
-    await chrome.action.openPopup();
-  } catch (error) {
-    // openPopup might fail in some contexts, ignore
-    console.warn('[background] Failed to open popup:', error);
-  }
-});
+    // If not recording, this shouldn't happen since popup is enabled
+    // But just in case, open the popup manually
+    try {
+      await chrome.action.openPopup();
+    } catch (error) {
+      // openPopup might fail in some contexts, ignore
+      console.warn('[background] Failed to open popup:', error);
+    }
+  });
+}
 
 // Update context menu visibility when tabs change
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  try {
-    const tab = await chrome.tabs.get(activeInfo.tabId);
-    if (tab) {
-      void updateContextMenuVisibility(tab);
+if (chrome.tabs?.onActivated) {
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+      const tab = await chrome.tabs.get(activeInfo.tabId);
+      if (tab) {
+        void updateContextMenuVisibility(tab);
+      }
+    } catch (error) {
+      console.warn('Failed to get tab for context menu update:', error);
     }
-  } catch (error) {
-    console.warn('Failed to get tab for context menu update:', error);
-  }
-});
+  });
+}
 
 // Clean up when tabs close
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-  void removePersistedRenamedTabTitle(tabId);
-});
+if (chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener(async (tabId) => {
+    void removePersistedRenamedTabTitle(tabId);
+  });
+}
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete') {
-    schedulePersistedRenamedTabTitleReapply(tabId);
-    if (tab) {
-      void updateContextMenuVisibility(tab);
+if (chrome.tabs?.onUpdated) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete') {
+      schedulePersistedRenamedTabTitleReapply(tabId);
+      if (tab) {
+        void updateContextMenuVisibility(tab);
+      }
     }
-  }
-});
+  });
+}
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  void handleAutoReloadAlarm(alarm);
-});
+if (chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    void handleAutoReloadAlarm(alarm);
+  });
+}
 
 // ============================================================================
 // PAGE CONTENT COLLECTION
@@ -2415,6 +2438,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
+        if (!chrome.windows?.get) {
+          sendResponse({ isActive: true });
+          return;
+        }
+
         // Get the window to check if it's focused
         const window = await chrome.windows.get(windowId);
         if (!window || !window.focused) {
@@ -3048,8 +3076,10 @@ async function updateActionBehavior() {
 }
 
 // Watch for changes to the action button behavior setting
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes[ACTION_BUTTON_STORAGE_KEY]) {
-    void updateActionBehavior();
-  }
-});
+if (chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes[ACTION_BUTTON_STORAGE_KEY]) {
+      void updateActionBehavior();
+    }
+  });
+}
