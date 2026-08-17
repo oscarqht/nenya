@@ -1,0 +1,11 @@
+--- packages/core/src/popup/popup.css
++++ packages/core/src/popup/popup.css
+@@ -22,6 +22,9 @@
+
+ @media (max-width: 479px) {
++  html {
++    width: 100%;
++  }
+   body {
+     min-width: 100%;
+     width: 100%;
