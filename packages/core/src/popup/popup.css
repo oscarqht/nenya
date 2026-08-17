@@ -8,10 +8,21 @@
 /* Popup width constraint - shared across all popup pages */
 body {
   width: 100vw;
-  min-width: var(--popup-width);
+  max-width: 100%;
+  min-width: min(var(--popup-width), 100vw);
   min-height: 480px;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  body {
+    min-width: 100%;
+    width: 100%;
+    min-height: 100vh;
+    padding: 0.5rem;
+  }
 }
 
 

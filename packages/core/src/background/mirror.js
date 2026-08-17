@@ -261,7 +261,7 @@ async function handleOpenAllItemsInCollection(collectionId, collectionTitle) {
     .map((tab) => tab.id)
     .filter((id) => id !== undefined);
 
-  if (tabIds.length > 0) {
+  if (tabIds.length > 0 && typeof chrome.tabs?.group === 'function') {
     const groupId = await /** @type {Promise<number>} */ (
       chrome.tabs.group({ tabIds })
     );
@@ -286,7 +286,7 @@ async function handleOpenAllItemsInCollection(collectionId, collectionTitle) {
       }
     }
 
-    if (title) {
+    if (title && chrome.tabGroups?.update) {
       await chrome.tabGroups.update(groupId, { title });
     }
   }

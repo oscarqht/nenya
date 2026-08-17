@@ -511,6 +511,99 @@
       padding: 0.5rem;
       font-size: 1.05rem;
     }
+
+    /* Mobile Responsive Layout for Firefox Mobile / Small Screens */
+    @media (max-width: 768px) {
+      #app {
+        flex-direction: column;
+      }
+
+      .options-sidebar {
+        position: sticky;
+        top: 0;
+        width: 100%;
+        height: auto;
+        max-height: none;
+        padding: 0.75rem 1rem;
+        border-right: none;
+        border-bottom: 1px solid var(--nenya-border-soft);
+        box-shadow: 0 4px 12px color-mix(in oklch, var(--color-base-300) 40%, transparent);
+        z-index: 30;
+      }
+
+      .options-sidebar .logo-container {
+        margin-bottom: 0.5rem;
+        padding: 0;
+      }
+
+      .options-sidebar .logo-icon,
+      .options-sidebar .logo-icon img {
+        width: 2rem !important;
+        height: 2rem !important;
+      }
+
+      .options-sidebar .logo-text {
+        font-size: 1.25rem;
+      }
+
+      .options-sidebar nav {
+        display: flex;
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 0.5rem;
+        padding-bottom: 0.25rem;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .options-sidebar .nav-group-title {
+        display: none;
+      }
+
+      .options-sidebar .nav-item {
+        white-space: nowrap;
+        flex-shrink: 0;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+        border-radius: 0.5rem;
+        border-left: none !important;
+        border-bottom: 2px solid transparent;
+      }
+
+      .options-sidebar .nav-item.active,
+      .options-sidebar a.nav-item.active {
+        border-left: none !important;
+        border-bottom: 2px solid var(--nenya-accent) !important;
+        border-radius: 0.5rem;
+      }
+
+      .options-main {
+        margin-left: 0;
+        width: 100%;
+        min-height: auto;
+        padding: 1rem;
+      }
+
+      .options-main > div {
+        max-width: 100%;
+      }
+
+      .options-card {
+        padding: 1.25rem;
+        border-radius: 1rem;
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+      }
+
+      .options-floating-bar {
+        bottom: 0.5rem;
+        right: 0.5rem;
+        width: auto;
+        max-width: calc(100vw - 1rem);
+        padding: 0.5rem;
+      }
+    }
   </style>
 </head>
 
