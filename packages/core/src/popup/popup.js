@@ -1010,55 +1010,6 @@ async function refreshMatchingRunCodeSection() {
 }
 
 /**
- * Create a tab immediately to the right of the active tab.
- * If the active tab is in a group, the new tab is moved into that same group.
- * @param {string} url
- * @param {chrome.tabs.Tab | null} [activeTab]
- * @returns {Promise<chrome.tabs.Tab>}
- */
-async function createTabNextToActive(url, activeTab = null) {
-  let baseTab = activeTab;
-  if (!baseTab) {
-    const tabs = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    baseTab = tabs[0] || null;
-  }
-
-  const createProperties = { url };
-  let activeGroupId = -1;
-
-  if (baseTab && typeof baseTab.windowId === 'number') {
-    createProperties.windowId = baseTab.windowId;
-  }
-  if (baseTab && typeof baseTab.index === 'number') {
-    createProperties.index = baseTab.index + 1;
-  }
-  if (
-    baseTab &&
-    typeof baseTab.groupId === 'number' &&
-    baseTab.groupId >= 0
-  ) {
-    activeGroupId = baseTab.groupId;
-  }
-
-  const newTab = await chrome.tabs.create(createProperties);
-  if (activeGroupId >= 0 && typeof newTab?.id === 'number') {
-    try {
-      await chrome.tabs.group({
-        groupId: activeGroupId,
-        tabIds: newTab.id,
-      });
-    } catch (error) {
-      console.warn('[popup] Failed to place tab in active group:', error);
-    }
-  }
-
-  return newTab;
-}
-
-/**
  * Opens a bookmark, reusing the current tab if it's empty.
  * @param {string} url - The URL of the bookmark to open.
  * @returns {Promise<void>}
@@ -1084,21 +1035,20 @@ async function openBookmark(url) {
       ) {
         await chrome.tabs.update(currentTab.id, { url });
       } else {
-        await createTabNextToActive(url, currentTab);
+        await chrome.tabs.create({ url });
       }
     } else {
       // Fallback to creating a new tab if no active tab is found.
-      await createTabNextToActive(url);
+      await chrome.tabs.create({ url });
     }
     closeCurrentSurface();
   } catch (error) {
     console.error('Error opening bookmark:', error);
     // Fallback in case of error
     try {
-      await createTabNextToActive(url);
+      await chrome.tabs.create({ url });
     } catch (fallbackError) {
       console.error('[popup] Fallback tab creation failed:', fallbackError);
-      await chrome.tabs.create({ url });
     }
     closeCurrentSurface();
   }
