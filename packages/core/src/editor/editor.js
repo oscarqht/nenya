@@ -11,6 +11,7 @@ import {
 
 const ANNOTATION_STYLE_PREFERENCES_KEY = 'editorAnnotationStylePreferences';
 const CLOSE_AFTER_ACTION_KEY = 'editorCloseAfterAction';
+const DECORATION_PREFERENCES_KEY = 'editorDecorationPreferences';
 const EXPORT_IMAGE_FORMAT = 'jpeg';
 const EXPORT_IMAGE_QUALITY = 0.85;
 const EXPORT_IMAGE_PIXEL_RATIO = 1;
@@ -18,6 +19,61 @@ const CLIPBOARD_IMAGE_FORMAT = 'png';
 const CLIPBOARD_IMAGE_MIME_TYPE = 'image/png';
 const ANNOTATION_SHAPE_TYPES = new Set(['arrow', 'draw', 'geo', 'highlight', 'line', 'note', 'text']);
 const SHARED_ANNOTATION_STYLE_IDS = new Set(['tldraw:color']);
+
+/**
+ * @typedef {Object} DecorationPreferences
+ * @property {boolean} enabled
+ * @property {number} hue
+ * @property {string} preset
+ * @property {number} padding
+ */
+
+/** @type {DecorationPreferences} */
+const DEFAULT_DECORATION_PREFERENCES = {
+  enabled: true,
+  hue: 165,
+  preset: 'mint',
+  padding: 56,
+};
+
+/** @type {Record<string, { name: string, hue: number, stops: string[] }>} */
+const DECORATION_PRESETS = {
+  neutral: {
+    name: 'Neutral',
+    hue: 210,
+    stops: ['hsl(210, 20%, 96%)', 'hsl(215, 25%, 88%)', 'hsl(220, 20%, 82%)'],
+  },
+  mint: {
+    name: 'Mint Teal',
+    hue: 165,
+    stops: ['hsl(150, 85%, 72%)', 'hsl(170, 85%, 62%)', 'hsl(185, 80%, 55%)'],
+  },
+  sunset: {
+    name: 'Sunset Coral',
+    hue: 18,
+    stops: ['hsl(15, 95%, 75%)', 'hsl(345, 90%, 70%)', 'hsl(25, 95%, 68%)'],
+  },
+  lavender: {
+    name: 'Lavender',
+    hue: 270,
+    stops: ['hsl(260, 85%, 78%)', 'hsl(285, 80%, 70%)', 'hsl(315, 85%, 72%)'],
+  },
+  ocean: {
+    name: 'Ocean Blue',
+    hue: 210,
+    stops: ['hsl(200, 90%, 72%)', 'hsl(215, 85%, 62%)', 'hsl(230, 80%, 55%)'],
+  },
+  rose: {
+    name: 'Berry Rose',
+    hue: 330,
+    stops: ['hsl(330, 90%, 72%)', 'hsl(345, 85%, 64%)', 'hsl(10, 90%, 68%)'],
+  },
+  dark: {
+    name: 'Midnight Slate',
+    hue: 225,
+    stops: ['hsl(220, 25%, 22%)', 'hsl(225, 30%, 14%)', 'hsl(230, 35%, 8%)'],
+  },
+};
 
 /**
  * @typedef {Object} AnnotationStylePreference
@@ -51,6 +107,8 @@ const SHARED_ANNOTATION_STYLE_IDS = new Set(['tldraw:color']);
  * @property {Record<string, number>} actionFeedbackTimers
  * @property {AnnotationStylePreferences} annotationStylePreferences
  * @property {number | null} stylePreferencesSaveTimer
+ * @property {DecorationPreferences} decorationPreferences
+ * @property {number | null} decorationPreferencesSaveTimer
  */
 
 /** @type {EditorState} */
@@ -63,6 +121,8 @@ const editorState = {
   actionFeedbackTimers: {},
   annotationStylePreferences: { version: 1, shapes: {}, sharedStylesForNextShape: {} },
   stylePreferencesSaveTimer: null,
+  decorationPreferences: { ...DEFAULT_DECORATION_PREFERENCES },
+  decorationPreferencesSaveTimer: null,
 };
 
 const h = createElement;
@@ -267,6 +327,121 @@ async function loadCloseAfterActionPreference() {
 function saveCloseAfterActionPreference(value) {
   void chrome.storage.local.set({
     [CLOSE_AFTER_ACTION_KEY]: value,
+  });
+}
+
+/**
+ * @param {number} hue
+ * @returns {string[]}
+ */
+function getGradientStopsForHue(hue) {
+  const h1 = (hue - 15 + 360) % 360;
+  const h2 = hue % 360;
+  const h3 = (hue + 25) % 360;
+  return [
+    `hsl(${h1}, 88%, 74%)`,
+    `hsl(${h2}, 85%, 65%)`,
+    `hsl(${h3}, 82%, 58%)`,
+  ];
+}
+
+/**
+ * @param {DecorationPreferences} preferences
+ * @returns {string[]}
+ */
+function getDecorationGradientStops(preferences) {
+  if (preferences.preset !== 'custom' && DECORATION_PRESETS[preferences.preset]) {
+    return DECORATION_PRESETS[preferences.preset].stops;
+  }
+  return getGradientStopsForHue(preferences.hue);
+}
+
+/**
+ * @param {DecorationPreferences} preferences
+ * @returns {string}
+ */
+function getDecorationGradientCss(preferences) {
+  const stops = getDecorationGradientStops(preferences);
+  return `linear-gradient(135deg, ${stops.join(', ')})`;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {DecorationPreferences}
+ */
+function normalizeDecorationPreferences(value) {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_DECORATION_PREFERENCES };
+  }
+  const source = /** @type {Record<string, unknown>} */ (value);
+  const enabled = typeof source.enabled === 'boolean' ? source.enabled : DEFAULT_DECORATION_PREFERENCES.enabled;
+  const hue = typeof source.hue === 'number' && !Number.isNaN(source.hue) ? Math.max(0, Math.min(360, source.hue)) : DEFAULT_DECORATION_PREFERENCES.hue;
+  const preset = typeof source.preset === 'string' && (source.preset in DECORATION_PRESETS || source.preset === 'custom') ? source.preset : DEFAULT_DECORATION_PREFERENCES.preset;
+  const padding = typeof source.padding === 'number' && [32, 56, 80].includes(source.padding) ? source.padding : DEFAULT_DECORATION_PREFERENCES.padding;
+  return { enabled, hue, preset, padding };
+}
+
+/**
+ * @returns {Promise<DecorationPreferences>}
+ */
+async function loadDecorationPreferences() {
+  const result = await chrome.storage.local.get(DECORATION_PREFERENCES_KEY);
+  return normalizeDecorationPreferences(result[DECORATION_PREFERENCES_KEY]);
+}
+
+/**
+ * @returns {void}
+ */
+function scheduleDecorationPreferencesSave() {
+  if (editorState.decorationPreferencesSaveTimer !== null) {
+    window.clearTimeout(editorState.decorationPreferencesSaveTimer);
+  }
+  editorState.decorationPreferencesSaveTimer = window.setTimeout(() => {
+    editorState.decorationPreferencesSaveTimer = null;
+    void chrome.storage.local.set({
+      [DECORATION_PREFERENCES_KEY]: editorState.decorationPreferences,
+    });
+  }, 250);
+}
+
+/**
+ * @returns {void}
+ */
+function syncDecorationUI() {
+  const { enabled, hue, preset, padding } = editorState.decorationPreferences;
+  const main = document.querySelector('.screenshot-editor-main');
+  const actionBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('action-decorate'));
+  const toggleBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById('prop-decoration-toggle'));
+  const floatingBar = document.getElementById('decoration-bar');
+  const hueSlider = /** @type {HTMLInputElement | null} */ (document.getElementById('prop-decoration-hue'));
+
+  if (main instanceof HTMLElement) {
+    main.classList.toggle('decoration-active', enabled);
+    const gradientCss = getDecorationGradientCss(editorState.decorationPreferences);
+    main.style.setProperty('--decoration-gradient', gradientCss);
+  }
+
+  if (actionBtn) {
+    actionBtn.classList.toggle('btn-active', enabled);
+    actionBtn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('active', enabled);
+    toggleBtn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  }
+
+  if (floatingBar) {
+    floatingBar.classList.toggle('hidden', !enabled);
+  }
+
+  if (hueSlider) {
+    hueSlider.value = String(hue);
+  }
+
+  document.querySelectorAll('.decoration-preset-dot').forEach((el) => {
+    const dotPreset = el.getAttribute('data-preset');
+    el.classList.toggle('active', dotPreset === preset);
   });
 }
 
@@ -688,14 +863,49 @@ function isCropShortcutEvent(event) {
 
 /**
  * @param {KeyboardEvent} event
+ * @returns {boolean}
+ */
+function isDecorateShortcutEvent(event) {
+  return (
+    event.key.toLowerCase() === 'd' &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !isEditableShortcutTarget(event.target) &&
+    !editorState.editor?.getEditingShapeId?.()
+  );
+}
+
+/**
+ * @returns {void}
+ */
+function toggleDecorationMode() {
+  editorState.decorationPreferences = {
+    ...editorState.decorationPreferences,
+    enabled: !editorState.decorationPreferences.enabled,
+  };
+  syncDecorationUI();
+  scheduleDecorationPreferencesSave();
+}
+
+/**
+ * @param {KeyboardEvent} event
  * @returns {void}
  */
 function handleScreenshotEditorShortcut(event) {
-  if (!isCropShortcutEvent(event) || isScreenshotCropModeActive()) return;
+  if (isCropShortcutEvent(event) && !isScreenshotCropModeActive()) {
+    event.preventDefault();
+    event.stopPropagation();
+    startScreenshotCrop();
+    return;
+  }
 
-  event.preventDefault();
-  event.stopPropagation();
-  startScreenshotCrop();
+  if (isDecorateShortcutEvent(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleDecorationMode();
+  }
 }
 
 /**
@@ -810,6 +1020,174 @@ function finishScreenshotCrop() {
 }
 
 /**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} x
+ * @param {number} y
+ * @param {number} width
+ * @param {number} height
+ * @param {number} radius
+ * @returns {void}
+ */
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.arcTo(x + width, y, x + width, y + r, r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+  ctx.lineTo(x + r, y + height);
+  ctx.arcTo(x, y + height, x, y + height - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+/**
+ * @param {Blob} imageBlob
+ * @param {'png' | 'jpeg'} format
+ * @returns {Promise<Blob>}
+ */
+async function compositeDecoratedScreenshot(imageBlob, format) {
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(imageBlob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load exported screenshot for composition'));
+    };
+    img.src = url;
+  });
+
+  const sw = image.naturalWidth || image.width;
+  const sh = image.naturalHeight || image.height;
+  const { padding } = editorState.decorationPreferences;
+  const stops = getDecorationGradientStops(editorState.decorationPreferences);
+
+  const scaleFactor = Math.max(1, Math.min(sw, sh) / 1080);
+  const pad = Math.round(52 * scaleFactor);
+  const bWidth = Math.max(8, Math.round(10 * scaleFactor));
+  const innerRadius = Math.max(12, Math.round(18 * scaleFactor));
+  const outerRadius = innerRadius + bWidth;
+
+  const totalW = sw + (pad * 2);
+  const totalH = sh + (pad * 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW;
+  canvas.height = totalH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to get 2D canvas context for decoration');
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // 1. Soft Gradient Background
+  const grad = ctx.createLinearGradient(0, 0, totalW, totalH);
+  if (stops.length === 2) {
+    grad.addColorStop(0, stops[0]);
+    grad.addColorStop(1, stops[1]);
+  } else if (stops.length >= 3) {
+    grad.addColorStop(0, stops[0]);
+    grad.addColorStop(0.5, stops[1]);
+    grad.addColorStop(1, stops[2]);
+  } else if (stops.length === 1) {
+    grad.addColorStop(0, stops[0]);
+    grad.addColorStop(1, stops[0]);
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, totalW, totalH);
+
+  // Frame dimensions (screenshot + border bezel)
+  const frameX = pad - bWidth;
+  const frameY = pad - bWidth;
+  const frameW = sw + (bWidth * 2);
+  const frameH = sh + (bWidth * 2);
+
+  // 2. Soft Drop Shadows (Multi-pass realistic diffusion)
+  // Layer 1: Ambient soft blur
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.16)';
+  ctx.shadowBlur = Math.round(36 * scaleFactor);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(16 * scaleFactor);
+  ctx.fillStyle = '#000000';
+  drawRoundedRect(ctx, frameX, frameY, frameW, frameH, outerRadius);
+  ctx.fill();
+  ctx.restore();
+
+  // Layer 2: Key light depth
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.22)';
+  ctx.shadowBlur = Math.round(18 * scaleFactor);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(8 * scaleFactor);
+  ctx.fillStyle = '#000000';
+  drawRoundedRect(ctx, frameX, frameY, frameW, frameH, outerRadius);
+  ctx.fill();
+  ctx.restore();
+
+  // Layer 3: Contact shadow
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.12)';
+  ctx.shadowBlur = Math.round(6 * scaleFactor);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(2 * scaleFactor);
+  ctx.fillStyle = '#000000';
+  drawRoundedRect(ctx, frameX, frameY, frameW, frameH, outerRadius);
+  ctx.fill();
+  ctx.restore();
+
+  // Restore clean gradient background inside frame so translucent border blends naturally
+  ctx.save();
+  drawRoundedRect(ctx, frameX, frameY, frameW, frameH, outerRadius);
+  ctx.clip();
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, totalW, totalH);
+  ctx.restore();
+
+  // 3. Thick Semi-Transparent Rounded Border
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+  drawRoundedRect(ctx, frameX, frameY, frameW, frameH, outerRadius);
+  ctx.fill();
+
+  // Subtle 1px translucent highlight stroke
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.50)';
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, frameX + 0.5, frameY + 0.5, frameW - 1, frameH - 1, outerRadius);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. Rounded Screenshot & Annotations (clipped to inner rounded rect)
+  ctx.save();
+  drawRoundedRect(ctx, pad, pad, sw, sh, innerRadius);
+  ctx.clip();
+  ctx.drawImage(image, pad, pad, sw, sh);
+  ctx.restore();
+
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const quality = format === 'jpeg' ? EXPORT_IMAGE_QUALITY : undefined;
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Failed to generate composite image'));
+      },
+      mimeType,
+      quality
+    );
+  });
+}
+
+/**
  * @param {'png' | 'jpeg'} format
  * @returns {Promise<Blob>}
  */
@@ -827,17 +1205,23 @@ async function exportAnnotatedScreenshot(format) {
   }
 
   const shapeIds = Array.from(editor.getCurrentPageShapeIds());
+  const isDecorated = editorState.decorationPreferences.enabled;
+
   const result = await editor.toImage(shapeIds, {
-    format,
+    format: isDecorated ? 'png' : format,
     bounds: editorState.bounds,
-    background: true,
+    background: !isDecorated,
     padding: 0,
     pixelRatio: EXPORT_IMAGE_PIXEL_RATIO,
-    ...(format === 'jpeg' ? { quality: EXPORT_IMAGE_QUALITY } : {}),
+    ...(!isDecorated && format === 'jpeg' ? { quality: EXPORT_IMAGE_QUALITY } : {}),
   });
 
   if (!result || !result.blob) {
     throw new Error('Failed to export annotated screenshot.');
+  }
+
+  if (isDecorated) {
+    return compositeDecoratedScreenshot(result.blob, format);
   }
 
   return result.blob;
@@ -954,6 +1338,43 @@ function bindActions() {
     saveCloseAfterActionPreference(editorState.closeAfterAction);
   });
 
+  document.getElementById('action-decorate')?.addEventListener('click', () => {
+    toggleDecorationMode();
+  });
+
+  document.getElementById('prop-decoration-toggle')?.addEventListener('click', () => {
+    toggleDecorationMode();
+  });
+
+  const hueSlider = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('prop-decoration-hue')
+  );
+  hueSlider?.addEventListener('input', () => {
+    const hueVal = Number(hueSlider.value);
+    editorState.decorationPreferences = {
+      ...editorState.decorationPreferences,
+      hue: hueVal,
+      preset: 'custom',
+    };
+    syncDecorationUI();
+    scheduleDecorationPreferencesSave();
+  });
+
+  document.querySelectorAll('.decoration-preset-dot').forEach((el) => {
+    el.addEventListener('click', () => {
+      const presetKey = el.getAttribute('data-preset');
+      if (!presetKey) return;
+      const presetDef = DECORATION_PRESETS[presetKey];
+      editorState.decorationPreferences = {
+        ...editorState.decorationPreferences,
+        preset: presetKey,
+        hue: presetDef ? presetDef.hue : editorState.decorationPreferences.hue,
+      };
+      syncDecorationUI();
+      scheduleDecorationPreferencesSave();
+    });
+  });
+
   getCropButton()?.addEventListener('click', () => {
     startScreenshotCrop();
   });
@@ -973,13 +1394,17 @@ async function init() {
   bindActions();
 
   try {
-    const [screenshot, annotationStylePreferences, closeAfterAction] = await Promise.all([
+    const [screenshot, annotationStylePreferences, closeAfterAction, decorationPreferences] = await Promise.all([
       loadStoredScreenshot(),
       loadAnnotationStylePreferences(),
       loadCloseAfterActionPreference(),
+      loadDecorationPreferences(),
     ]);
     editorState.annotationStylePreferences = annotationStylePreferences;
     editorState.closeAfterAction = closeAfterAction;
+    editorState.decorationPreferences = decorationPreferences;
+
+    syncDecorationUI();
 
     const closeAfter = /** @type {HTMLInputElement | null} */ (
       document.getElementById('prop-close-after')

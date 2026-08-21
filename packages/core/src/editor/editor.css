@@ -113,6 +113,224 @@ body {
     font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* Arc Screenshot Decoration Live Styles */
+:root {
+    --decoration-gradient: linear-gradient(135deg, hsl(165, 85%, 72%) 0%, hsl(180, 85%, 62%) 50%, hsl(195, 80%, 55%) 100%);
+    --decoration-border-radius: 18px;
+    --decoration-border-width: 10px;
+    --decoration-border-color: rgba(255, 255, 255, 0.35);
+}
+
+.screenshot-editor-main.decoration-active {
+    background: var(--decoration-gradient);
+    transition: background 0.25s ease;
+}
+
+.decoration-active .tl-container {
+    background-color: transparent !important;
+}
+
+.decoration-active .tl-theme__light,
+.decoration-active .tl-theme__dark,
+.decoration-active .tl-background {
+    background-color: transparent !important;
+}
+
+.decoration-active .tl-grid {
+    opacity: 0.12;
+}
+
+.decoration-active .tl-shape[data-shape-type="image"][data-shape-id="shape:screenshot-background"] {
+    border-radius: var(--decoration-border-radius, 18px);
+    overflow: visible;
+    box-shadow:
+        0 0 0 var(--decoration-border-width, 10px) var(--decoration-border-color, rgba(255, 255, 255, 0.35)),
+        0 0 0 calc(var(--decoration-border-width, 10px) + 1px) rgba(255, 255, 255, 0.50),
+        0 8px 24px -2px rgba(0, 0, 0, 0.12),
+        0 20px 48px -6px rgba(0, 0, 0, 0.20),
+        0 36px 72px -12px rgba(0, 0, 0, 0.28);
+    transition: box-shadow 0.25s ease, border-radius 0.25s ease;
+}
+
+.decoration-active .tl-shape[data-shape-type="image"][data-shape-id="shape:screenshot-background"] .tl-html-container,
+.decoration-active .tl-shape[data-shape-type="image"][data-shape-id="shape:screenshot-background"] .tl-image,
+.decoration-active .tl-shape[data-shape-type="image"][data-shape-id="shape:screenshot-background"] img {
+    border-radius: var(--decoration-border-radius, 18px);
+    overflow: hidden;
+}
+
+/* Floating Arc Decoration Control Bar */
+.decoration-floating-bar {
+    position: absolute;
+    top: 14px;
+    bottom: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    pointer-events: auto;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.decoration-floating-bar.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -14px);
+}
+
+.decoration-bar-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-base-100), transparent 15%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--color-base-content), transparent 85%);
+    box-shadow:
+        0 12px 32px -4px rgba(0, 0, 0, 0.16),
+        0 4px 12px -2px rgba(0, 0, 0, 0.08);
+}
+
+.decoration-toggle-btn {
+    color: color-mix(in srgb, var(--color-base-content), transparent 30%);
+    transition: all 0.15s ease;
+}
+
+.decoration-toggle-btn.active {
+    color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary), transparent 85%);
+}
+
+.decoration-divider {
+    width: 1px;
+    height: 18px;
+    background: color-mix(in srgb, var(--color-base-content), transparent 85%);
+    margin: 0 1px;
+}
+
+.decoration-slider-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.decoration-hue-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 130px;
+    height: 16px;
+    border-radius: 9999px;
+    outline: none;
+    cursor: pointer;
+    background: linear-gradient(
+        to right,
+        #ff3b30,
+        #ff9500,
+        #ffcc00,
+        #34c759,
+        #00c7be,
+        #32ade6,
+        #007aff,
+        #5856d6,
+        #af52de,
+        #ff2d55,
+        #ff3b30
+    );
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.decoration-hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.28),
+        0 0 0 1px rgba(0, 0, 0, 0.1);
+    cursor: grab;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.decoration-hue-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: none;
+    box-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.28),
+        0 0 0 1px rgba(0, 0, 0, 0.1);
+    cursor: grab;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.decoration-hue-slider:active::-webkit-slider-thumb,
+.decoration-hue-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.12);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+
+.decoration-presets-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.decoration-preset-dot {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.decoration-preset-dot:hover {
+    transform: scale(1.22);
+}
+
+.decoration-preset-dot.active {
+    border-color: #ffffff;
+    box-shadow:
+        0 0 0 2px var(--color-primary),
+        0 2px 6px rgba(0, 0, 0, 0.25);
+    transform: scale(1.15);
+}
+
+.preset-neutral {
+    background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.preset-mint {
+    background: linear-gradient(135deg, #7cf5c8, #2fcab5);
+}
+
+.preset-sunset {
+    background: linear-gradient(135deg, #ff9a8b, #ff6a88);
+}
+
+.preset-lavender {
+    background: linear-gradient(135deg, #c471ed, #f64f59);
+}
+
+.preset-ocean {
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
+}
+
+.preset-rose {
+    background: linear-gradient(135deg, #fa709a, #fee140);
+}
+
+.preset-dark {
+    background: linear-gradient(135deg, #37474f, #1a2327);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
 @media (max-width: 640px) {
     :root {
         --navbar-height: 46px;
@@ -125,4 +343,25 @@ body {
     .toolbar-subtitle {
         display: none;
     }
+
+    .decoration-floating-bar {
+        top: 8px;
+        bottom: auto;
+        max-width: 95vw;
+    }
+
+    .decoration-bar-content {
+        padding: 5px 10px;
+        gap: 6px;
+        overflow-x: auto;
+    }
+
+    .decoration-hue-slider {
+        width: 90px;
+    }
+
+    .decoration-presets-row {
+        gap: 4px;
+    }
 }
+

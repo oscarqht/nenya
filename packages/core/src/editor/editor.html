@@ -24,7 +24,15 @@
                 <label class="close-after-control" title="Close after copy or save">
                     <input type="checkbox" id="prop-close-after" class="checkbox checkbox-xs checkbox-primary">
                 </label>
-                <button class="btn btn-sm btn-outline btn-square h-8 min-h-8" id="action-crop" title="Crop"
+                <button class="btn btn-sm btn-outline btn-square h-8 min-h-8" id="action-decorate"
+                    title="Toggle Arc Frame (D)" aria-pressed="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect width="18" height="18" x="3" y="3" rx="4" />
+                        <rect width="10" height="10" x="7" y="7" rx="2" />
+                    </svg>
+                </button>
+                <button class="btn btn-sm btn-outline btn-square h-8 min-h-8" id="action-crop" title="Crop (C)"
                     aria-pressed="false">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -53,6 +61,44 @@
         <main class="screenshot-editor-main">
             <div id="editor-status" class="editor-status">Loading screenshot...</div>
             <div id="tldraw-editor" class="tldraw-editor" aria-label="Screenshot annotation editor"></div>
+
+            <div id="decoration-bar" class="decoration-floating-bar" role="region" aria-label="Screenshot decorations">
+                <div class="decoration-bar-content glass-panel">
+                    <button id="prop-decoration-toggle" class="btn btn-xs btn-circle btn-ghost decoration-toggle-btn active"
+                        title="Toggle Arc decoration" aria-label="Toggle Arc decoration" aria-pressed="true">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                            <rect width="18" height="18" x="3" y="3" rx="4" />
+                            <rect width="10" height="10" x="7" y="7" rx="2" />
+                        </svg>
+                    </button>
+
+                    <div class="decoration-divider"></div>
+
+                    <button id="preset-neutral" class="decoration-preset-dot preset-neutral" data-preset="neutral"
+                        title="Clean Neutral theme" aria-label="Clean Neutral theme"></button>
+
+                    <div class="decoration-slider-container" title="Adjust theme color">
+                        <input type="range" id="prop-decoration-hue" min="0" max="360" value="165"
+                            class="decoration-hue-slider" aria-label="Theme color hue">
+                    </div>
+
+                    <div class="decoration-presets-row">
+                        <button class="decoration-preset-dot preset-mint active" data-preset="mint" title="Mint Teal"
+                            aria-label="Mint Teal preset"></button>
+                        <button class="decoration-preset-dot preset-sunset" data-preset="sunset" title="Sunset Coral"
+                            aria-label="Sunset Coral preset"></button>
+                        <button class="decoration-preset-dot preset-lavender" data-preset="lavender" title="Lavender"
+                            aria-label="Lavender preset"></button>
+                        <button class="decoration-preset-dot preset-ocean" data-preset="ocean" title="Ocean Blue"
+                            aria-label="Ocean Blue preset"></button>
+                        <button class="decoration-preset-dot preset-rose" data-preset="rose" title="Berry Rose"
+                            aria-label="Berry Rose preset"></button>
+                        <button class="decoration-preset-dot preset-dark" data-preset="dark" title="Midnight Slate"
+                            aria-label="Midnight Slate preset"></button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
