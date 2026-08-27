@@ -3115,29 +3115,46 @@ if (chrome?.storage?.onChanged) {
   });
 }
 
-if (document.body.dataset.surface !== 'home') {
-  if (chrome?.tabs?.onActivated) {
-    chrome.tabs.onActivated.addListener(() => {
-      window.location.reload();
-    });
+/**
+ * Ensures the popup search input is focused on startup and when the popup window gains focus.
+ * Firefox WebExtensions often do not automatically focus elements with the HTML autofocus attribute.
+ *
+ * @param {number} [attempts=20]
+ * @returns {void}
+ */
+function focusSearchInput(attempts = 20) {
+  if (!bookmarksSearchInput || attempts <= 0) {
+    return;
   }
 
-  if (chrome?.tabs?.onUpdated) {
-    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-      if (changeInfo.url) {
-        const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (activeTabs.length > 0 && activeTabs[0].id === tabId) {
-          window.location.reload();
-        }
-      }
-    });
+  const saveModal = /** @type {HTMLDialogElement | null} */ (
+    document.getElementById('saveToUnsortedModal')
+  );
+  if (saveModal?.open) {
+    return;
   }
 
-  if (chrome?.windows?.onFocusChanged) {
-    chrome.windows.onFocusChanged.addListener((windowId) => {
-      if (windowId !== chrome.windows.WINDOW_ID_NONE) {
-        window.location.reload();
-      }
-    });
+  window.focus();
+  bookmarksSearchInput.focus();
+
+  if (document.activeElement === bookmarksSearchInput) {
+    return;
   }
+
+  window.setTimeout(() => {
+    focusSearchInput(attempts - 1);
+  }, 50);
 }
+
+focusSearchInput();
+
+window.addEventListener('focus', () => {
+  focusSearchInput(5);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    focusSearchInput(5);
+  }
+});
+
