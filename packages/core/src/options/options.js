@@ -2,7 +2,6 @@ import './theme.js';
 import '../shared/iconUrl.js';
 import './bookmarks.js';
 import './pinnedShortcuts.js';
-import './actionButton.js';
 import './newTabDestination.js';
 import './importExport.js';
 import './googleDriveBackup.js';

@@ -43,8 +43,7 @@
     "desktopCapture",
     "offscreen",
     "userScripts",
-    "identity",
-    "sidePanel"
+    "identity"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -157,8 +156,6 @@
     "screen-recording-start": {
       "description": "⏺️ Start screen recording"
     }
-  },
-  "side_panel": {
-    "default_path": "src/popup/index.html"
   }
 }
+
