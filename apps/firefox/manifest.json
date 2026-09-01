@@ -48,9 +48,6 @@
     "open_in_tab": true
   },
   "options_page": "src/options/index.html",
-  "chrome_url_overrides": {
-    "newtab": "src/newtab/index.html"
-  },
   "permissions": [
     "bookmarks",
     "storage",

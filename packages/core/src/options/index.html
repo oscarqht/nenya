@@ -631,10 +631,6 @@
         </a>
 
         <div class="nav-group-title">Interface</div>
-        <a href="#new-tab-destination-heading" class="nav-item nav-link" data-section="new-tab-destination-heading">
-          <span class="nav-icon text-lg">↗️</span>
-          <span>New Tab</span>
-        </a>
         <a href="#pinned-shortcuts-heading" class="nav-item nav-link" data-section="pinned-shortcuts-heading">
           <span class="nav-icon text-lg">📌</span>
           <span>Pinned Shortcuts</span>
@@ -790,35 +786,6 @@
                 </button>
               </div>
               <div id="customSearchEnginesList"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- New Tab Destination Section -->
-        <section class="section-content" data-section="new-tab-destination-heading" id="section-new-tab-destination">
-          <div class="animate-in">
-            <div class="section-header">
-              <h1 id="new-tab-destination-heading" class="section-title">New Tab</h1>
-              <p class="section-description">Choose the web page Nenya opens when you create a new tab.</p>
-            </div>
-
-            <div class="options-card max-w-2xl">
-              <form id="newTabDestinationForm" class="space-y-4" novalidate>
-                <div class="form-control w-full">
-                  <label class="label" for="newTabDestinationInput">
-                    <span class="label-text font-medium text-base-content/80">New Tab Destination</span>
-                  </label>
-                  <input id="newTabDestinationInput" class="nenya-input w-full" type="url" inputmode="url"
-                    autocomplete="url" spellcheck="false" placeholder="https://example.com" required>
-                  <label class="label">
-                    <span class="label-text-alt text-base-content/60">Use a full HTTP or HTTPS URL. The default opens your Raindrop collection.</span>
-                  </label>
-                </div>
-                <div class="flex items-center gap-3">
-                  <button class="nenya-btn nenya-btn-primary" type="submit">Save Destination</button>
-                  <p id="newTabDestinationStatus" class="text-sm text-base-content/60" role="status" aria-live="polite"></p>
-                </div>
-              </form>
             </div>
           </div>
         </section>
